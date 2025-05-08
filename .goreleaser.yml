@@ -17,7 +17,7 @@ builds:
     main: ./cmd/cli
     ldflags:
       - -s -w -X main.version={{.Version}}
-    binary: "{{ .ProjectName }}_{{ .Version }}"
+    binary: "interop"
     # Skip this build for snapshot tags
     ignore:
       - goos: linux
@@ -36,7 +36,7 @@ builds:
     main: ./cmd/cli
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.isSnapshot=true
-    binary: "{{ .ProjectName }}_snapshot_{{ .Version }}"
+    binary: "interop"
     # Only run this build for snapshot tags
 
 

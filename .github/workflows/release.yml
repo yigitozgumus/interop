@@ -30,3 +30,43 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set tag name
+        id: tag
+        run: echo "tag_name=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+      - name: Extract Checksum
+        id: sha256
+        if: ${{ !contains(env.tag_name, 'snapshot') && !contains(env.tag_name, 'SNAPSHOT') }}
+        run: |
+          # Extract checksum for Darwin ARM64 from the checksums.txt file
+          ARM64_CHECKSUM=$(grep "interop_Darwin_arm64.tar.gz" dist/checksums.txt | awk '{print $1}')
+          echo "sha256=$ARM64_CHECKSUM" >> $GITHUB_OUTPUT
+          echo "Using checksum: $ARM64_CHECKSUM for interop_Darwin_arm64.tar.gz"
+
+      - name: Clone Homebrew Tap and Update Formula
+        if: ${{ !contains(env.tag_name, 'snapshot') && !contains(env.tag_name, 'SNAPSHOT') }}
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          # Clone the repo using GitHub CLI (which handles auth automatically)
+          gh repo clone yigitozgumus/homebrew-formulae
+          
+          # Configure git
+          cd homebrew-formulae
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          
+          # Update formula
+          cd Formula
+          # Update the version lines
+          sed -i "s|version \".*\"|version \"${{ env.tag_name }}\"|g" interop.rb
+          # Update the URL
+          sed -i "s|url \".*\"|url \"https://github.com/yigitozgumus/interop/releases/download/${{ env.tag_name }}/interop_Darwin_arm64.tar.gz\"|" interop.rb
+          # Update the sha256
+          sed -i "s|sha256 \".*\"|sha256 \"${{ steps.sha256.outputs.sha256 }}\"|" interop.rb
+          
+          # Commit and push using GitHub CLI
+          git add interop.rb
+          git commit -m "Update interop formula for version ${{ env.tag_name }}"
+          git push https://x-access-token:${{ secrets.HOMEBREW_TAP_TOKEN }}@github.com/yigitozgumus/homebrew-formulae.git main

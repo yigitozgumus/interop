@@ -2,4 +2,12 @@
 
 A Go command-line interface application.
 
-## Development
+## Installation
+
+### Using Homebrew
+
+To install Interop using Homebrew, run the following command:
+
+```bash
+brew install yigitozgumus/formulae/interop
+```
