@@ -1,0 +1,82 @@
+before:
+  hooks:
+    - go mod tidy
+
+# For regular releases (v1.0.0, v2.0.0, etc.)
+builds:
+  - id: regular
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    main: ./cmd/cli
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    binary: "{{ .ProjectName }}_{{ .Version }}"
+    # Skip this build for snapshot tags
+    ignore:
+      - goos: linux
+        goarch: arm64
+
+
+  # Special configuration for snapshot releases (v1.0.0-snapshot, v2.0.0-snapshot, etc.)
+  - id: snapshot
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+    main: ./cmd/cli
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.isSnapshot=true
+    binary: "{{ .ProjectName }}_snapshot_{{ .Version }}"
+    # Only run this build for snapshot tags
+
+
+archives:
+  - format: tar.gz
+    id: regular
+    builds: [ regular ]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+
+  - format: tar.gz
+    id: snapshot
+    builds: [ snapshot ]
+    name_template: >-
+      {{ .ProjectName }}_snapshot_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+
+checksum:
+  name_template: 'checksums.txt'
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - Merge pull request
+      - Merge branch
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-dev-{{.ShortCommit}}"

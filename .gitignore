@@ -1,1 +1,4 @@
 .idea/
+
+# GoReleaser output
+dist/
