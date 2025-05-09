@@ -20,8 +20,8 @@ type LogLevel int
 const (
 	// LevelError only shows errors
 	LevelError LogLevel = iota
-	// LevelInfo shows errors and info messages
-	LevelInfo
+	// LevelWarning shows errors and info messages
+	LevelWarning
 	// LevelVerbose shows all messages
 	LevelVerbose
 )
@@ -31,8 +31,8 @@ func ParseLogLevel(level string) LogLevel {
 	switch strings.ToLower(level) {
 	case "verbose":
 		return LevelVerbose
-	case "info":
-		return LevelInfo
+	case "warning":
+		return LevelWarning
 	default:
 		return LevelError
 	}
@@ -56,10 +56,10 @@ func (l *Logger) Error(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, colorRed+"Error: "+colorReset+format+"\n", args...)
 }
 
-// Info prints a yellow "Info: …" message to stdout if log level permits.
-func (l *Logger) Info(format string, args ...interface{}) {
-	if l.level >= LevelInfo {
-		fmt.Printf(colorYellow+"Info: "+colorReset+format+"\n", args...)
+// Warning prints a yellow "Warning: …" message to stdout if log level permits.
+func (l *Logger) Warning(format string, args ...interface{}) {
+	if l.level >= LevelWarning {
+		fmt.Printf(colorYellow+"Warning: "+colorReset+format+"\n", args...)
 	}
 }
 
@@ -86,9 +86,9 @@ func Error(format string, args ...interface{}) {
 	os.Exit(1)
 }
 
-// Info prints a yellow "Info: …" message to stdout.
-func Info(format string, args ...interface{}) {
-	defaultLogger.Info(format, args...)
+// Warning prints a yellow "Warning: …" message to stdout.
+func Warning(format string, args ...interface{}) {
+	defaultLogger.Warning(format, args...)
 }
 
 // Message prints a green "Message: …" message to stdout.

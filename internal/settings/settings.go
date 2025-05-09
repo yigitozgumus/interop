@@ -21,18 +21,38 @@ type Settings struct {
 	Projects map[string]Project `toml:"projects"`
 }
 
-const (
-	settingsDir    = ".config"
-	appDir         = "interop"
-	cfgFile        = "settings.toml"
-	executablesDir = "executables"
-)
+// PathConfig defines the directory structure for settings
+type PathConfig struct {
+	SettingsDir    string
+	AppDir         string
+	CfgFile        string
+	ExecutablesDir string
+}
+
+// DefaultPathConfig contains the default paths configuration
+var DefaultPathConfig = PathConfig{
+	SettingsDir:    ".config",
+	AppDir:         "interop",
+	CfgFile:        "settings.toml",
+	ExecutablesDir: "executables",
+}
 
 var (
-	once sync.Once
-	cfg  *Settings
-	err  error
+	once       sync.Once
+	cfg        *Settings
+	err        error
+	pathConfig = DefaultPathConfig
 )
+
+// SetPathConfig allows overriding the default path configuration
+// Useful for testing
+func SetPathConfig(config PathConfig) {
+	pathConfig = config
+	// Reset singleton to reload with new config
+	once = sync.Once{}
+	cfg = nil
+	err = nil
+}
 
 // validate() guarantees ~/.settings/interop/settings.toml exists and
 // returns its absolute path.
@@ -41,9 +61,9 @@ func validate() (string, error) {
 	if e != nil {
 		util.Error("Failed to get user home directory: " + e.Error())
 	}
-	config := filepath.Join(root, settingsDir)
-	base := filepath.Join(config, appDir)
-	path := filepath.Join(base, cfgFile)
+	config := filepath.Join(root, pathConfig.SettingsDir)
+	base := filepath.Join(config, pathConfig.AppDir)
+	path := filepath.Join(base, pathConfig.CfgFile)
 
 	// ensure ~/.settings/interop
 	if e := os.MkdirAll(base, 0o755); e != nil {
@@ -52,7 +72,7 @@ func validate() (string, error) {
 
 	// seed default file on first run
 	if _, e := os.Stat(path); errors.Is(e, os.ErrNotExist) {
-		def := Settings{LogLevel: "error", Projects: map[string]Project{}}
+		def := Settings{LogLevel: "warning", Projects: map[string]Project{}}
 		f, e := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o644)
 		if e != nil {
 			util.Error("Failed to create settings file: " + e.Error())
@@ -80,6 +100,8 @@ func Load() (*Settings, error) {
 			err = e
 			util.Error("Failed to decode settings file: " + e.Error())
 		}
+		// Initialize the default logger with the loaded log level
+		util.SetDefaultLogLevel(c.LogLevel)
 
 		// Validate project paths
 		if len(c.Projects) > 0 {
@@ -93,21 +115,20 @@ func Load() (*Settings, error) {
 				// Check if path is absolute and outside home directory
 				if filepath.IsAbs(project.Path) && !filepath.HasPrefix(project.Path, homeDir) {
 					errMsg := fmt.Sprintf("project '%s' path must be inside $HOME: %s", name, project.Path)
-					util.Error(errMsg)
+					util.Warning(errMsg)
 					continue
 				}
 
 				projectPath := filepath.Join(homeDir, project.Path)
 				if _, e := os.Stat(projectPath); os.IsNotExist(e) {
 					errMsg := fmt.Sprintf("project '%s' path does not exist: %s", name, projectPath)
-					util.Error(errMsg)
+					util.Warning(errMsg)
 				}
 			}
+			util.Message("Projects are validated")
 		}
 
 		cfg = &c
-		// Initialize the default logger with the loaded log level
-		util.SetDefaultLogLevel(c.LogLevel)
 	})
 	return cfg, err
 }
