@@ -79,9 +79,11 @@ func SetDefaultLogLevel(level string) {
 	defaultLogger.level = ParseLogLevel(level)
 }
 
-// Error prints a red "Error: …" message to stderr.
+// Error makes the program exit with a non-zero status when an error occurs
 func Error(format string, args ...interface{}) {
 	defaultLogger.Error(format, args...)
+	// Make the program exit with a non-zero status when an error occurs
+	os.Exit(1)
 }
 
 // Info prints a yellow "Info: …" message to stdout.

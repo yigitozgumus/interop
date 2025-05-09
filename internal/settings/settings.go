@@ -3,6 +3,7 @@ package settings
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/BurntSushi/toml"
 	"interop/internal/util"
 	"os"
@@ -10,8 +11,14 @@ import (
 	"sync"
 )
 
+type Project struct {
+	Path        string `toml:"path"`
+	Description string `toml:"description,omitempty"`
+}
+
 type Settings struct {
-	LogLevel string `toml:"log_level"`
+	LogLevel string             `toml:"log_level"`
+	Projects map[string]Project `toml:"projects"`
 }
 
 const (
@@ -32,7 +39,7 @@ var (
 func validate() (string, error) {
 	root, e := os.UserHomeDir()
 	if e != nil {
-		return "", e
+		util.Error("Failed to get user home directory: " + e.Error())
 	}
 	config := filepath.Join(root, settingsDir)
 	base := filepath.Join(config, appDir)
@@ -40,19 +47,22 @@ func validate() (string, error) {
 
 	// ensure ~/.settings/interop
 	if e := os.MkdirAll(base, 0o755); e != nil {
-		util.Error("Can't create the directory for settings.")
-		return "", e
+		util.Error("Can't create the directory for settings: " + e.Error())
 	}
 
 	// seed default file on first run
 	if _, e := os.Stat(path); errors.Is(e, os.ErrNotExist) {
-		def := Settings{LogLevel: "error"}
+		def := Settings{LogLevel: "error", Projects: map[string]Project{}}
 		f, e := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o644)
 		if e != nil {
-			return "", e
+			util.Error("Failed to create settings file: " + e.Error())
 		}
-		_ = toml.NewEncoder(f).Encode(def) // ignore encode err on bootstrap
-		_ = f.Close()
+		if e := toml.NewEncoder(f).Encode(def); e != nil {
+			util.Error("Failed to encode default settings: " + e.Error())
+		}
+		if e := f.Close(); e != nil {
+			util.Error("Failed to close settings file: " + e.Error())
+		}
 	}
 	return path, nil
 }
@@ -63,13 +73,38 @@ func Load() (*Settings, error) {
 		path, e := validate()
 		if e != nil {
 			err = e
-			return
+			util.Error("Failed to validate settings: " + e.Error())
 		}
 		var c Settings
 		if _, e := toml.DecodeFile(path, &c); e != nil {
 			err = e
-			return
+			util.Error("Failed to decode settings file: " + e.Error())
 		}
+
+		// Validate project paths
+		if len(c.Projects) > 0 {
+			homeDir, e := os.UserHomeDir()
+			if e != nil {
+				err = e
+				util.Error("Failed to get user home directory: " + e.Error())
+			}
+
+			for name, project := range c.Projects {
+				// Check if path is absolute and outside home directory
+				if filepath.IsAbs(project.Path) && !filepath.HasPrefix(project.Path, homeDir) {
+					errMsg := fmt.Sprintf("project '%s' path must be inside $HOME: %s", name, project.Path)
+					util.Error(errMsg)
+					continue
+				}
+
+				projectPath := filepath.Join(homeDir, project.Path)
+				if _, e := os.Stat(projectPath); os.IsNotExist(e) {
+					errMsg := fmt.Sprintf("project '%s' path does not exist: %s", name, projectPath)
+					util.Error(errMsg)
+				}
+			}
+		}
+
 		cfg = &c
 		// Initialize the default logger with the loaded log level
 		util.SetDefaultLogLevel(c.LogLevel)
