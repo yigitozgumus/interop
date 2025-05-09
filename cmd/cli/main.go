@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"interop/internal/settings"
+	"interop/internal/util"
+	"log"
 )
 
 // These variables are set during build time using ldflags
@@ -11,6 +14,16 @@ var (
 )
 
 func main() {
+	_, err := settings.Load()
+	if err != nil {
+		log.Fatalf("settings init: %v", err)
+	}
+	util.Message("Config is loaded")
+
+	// 2. Wire up anything that depends on settings.
+	//initLogger(cfg.LogLevel)
+
+	// 4. Hand off to the rest of your CLI.
 	displayHelp()
 }
 
