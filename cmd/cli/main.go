@@ -2,38 +2,55 @@ package main
 
 import (
 	"fmt"
+	"github.com/spf13/cobra"
+	"interop/internal/project"
 	"interop/internal/settings"
 	"interop/internal/util"
 	"log"
+	"os"
 )
 
-// These variables are set during build time using ldflags
 var (
 	version    = "dev"
 	isSnapshot = "false"
 )
 
 func main() {
-	_, err := settings.Load()
+	cfg, err := settings.Load()
 	if err != nil {
 		log.Fatalf("settings init: %v", err)
 	}
 	util.Message("Config is loaded")
 
-	// 2. Wire up anything that depends on settings.
-	//initLogger(cfg.LogLevel)
+	rootCmd := &cobra.Command{
+		Use:     "interop",
+		Short:   "Interop - Project management CLI",
+		Version: getVersionInfo(),
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
+	}
 
-	// 4. Hand off to the rest of your CLI.
-	displayHelp()
+	projectsCmd := &cobra.Command{
+		Use:   "projects",
+		Short: "List all configured projects",
+		Run: func(cmd *cobra.Command, args []string) {
+			project.List(cfg)
+		},
+	}
+
+	rootCmd.AddCommand(projectsCmd)
+
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 }
 
-func displayHelp() {
+func getVersionInfo() string {
 	versionInfo := version
 	if isSnapshot == "true" {
 		versionInfo += " (snapshot)"
 	}
-
-	fmt.Printf("Interop - Version %s\n\n", versionInfo)
-	fmt.Println("Documentation and Help:")
-	fmt.Println("  Visit https://github.com/yigitozgumus/interop for more details.")
+	return versionInfo
 }

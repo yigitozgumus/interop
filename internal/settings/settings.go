@@ -65,12 +65,10 @@ func validate() (string, error) {
 	base := filepath.Join(config, pathConfig.AppDir)
 	path := filepath.Join(base, pathConfig.CfgFile)
 
-	// ensure ~/.settings/interop
 	if e := os.MkdirAll(base, 0o755); e != nil {
 		util.Error("Can't create the directory for settings: " + e.Error())
 	}
 
-	// seed default file on first run
 	if _, e := os.Stat(path); errors.Is(e, os.ErrNotExist) {
 		def := Settings{LogLevel: "warning", Projects: map[string]Project{}}
 		f, e := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o644)
@@ -100,10 +98,8 @@ func Load() (*Settings, error) {
 			err = e
 			util.Error("Failed to decode settings file: " + e.Error())
 		}
-		// Initialize the default logger with the loaded log level
 		util.SetDefaultLogLevel(c.LogLevel)
 
-		// Validate project paths
 		if len(c.Projects) > 0 {
 			homeDir, e := os.UserHomeDir()
 			if e != nil {
@@ -112,7 +108,6 @@ func Load() (*Settings, error) {
 			}
 
 			for name, project := range c.Projects {
-				// Check if path is absolute and outside home directory
 				if filepath.IsAbs(project.Path) && !filepath.HasPrefix(project.Path, homeDir) {
 					errMsg := fmt.Sprintf("project '%s' path must be inside $HOME: %s", name, project.Path)
 					util.Warning(errMsg)
