@@ -18,6 +18,7 @@ func List(cfg *settings.Settings) {
 
 	fmt.Println("PROJECTS:")
 	fmt.Println("=========")
+	fmt.Println()
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -55,9 +56,19 @@ func List(cfg *settings.Settings) {
 			}
 		}
 
-		fmt.Printf("%s: %s [Valid: %s] [In $HOME: %s]\n", name, project.Path, valid, inHomeDir)
+		// Print project name and path
+		fmt.Printf("📁 Name: %s\n", name)
+		fmt.Printf("   Path: %s\n", project.Path)
+		
+		// Print status indicators
+		fmt.Printf("   Status: Valid: %s  |  In $HOME: %s\n", valid, inHomeDir)
+		
+		// Print description if exists
 		if project.Description != "" {
-			fmt.Printf("  Description: %s\n", project.Description)
+			fmt.Printf("   Description: %s\n", project.Description)
 		}
+		
+		// Add separator between projects
+		fmt.Println()
 	}
 }
