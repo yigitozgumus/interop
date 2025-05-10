@@ -59,7 +59,21 @@ func main() {
 		},
 	}
 
+	commandRunCmd := &cobra.Command{
+		Use:   "run [command-name]",
+		Short: "Execute a configured command",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			commandName := args[0]
+			err := command.Run(cfg.Commands, commandName)
+			if err != nil {
+				util.Error(fmt.Sprintf("Failed to run command '%s': %v", commandName, err))
+			}
+		},
+	}
+
 	commandCmd.AddCommand(commandListCmd)
+	commandCmd.AddCommand(commandRunCmd)
 	rootCmd.AddCommand(commandCmd)
 
 	editCmd := &cobra.Command{

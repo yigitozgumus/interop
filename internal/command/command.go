@@ -2,6 +2,9 @@ package command
 
 import (
 	"fmt"
+	"interop/internal/util"
+	"os"
+	"os/exec"
 )
 
 // Command defines a command that can be executed
@@ -53,9 +56,8 @@ func (c *Command) UnmarshalTOML(data interface{}) error {
 
 // PrintCommandDetails prints detailed information about a single command
 func PrintCommandDetails(name string, cmd Command) {
-	// Print command name and command
+	// Print command name
 	fmt.Printf("⚡ Name: %s\n", name)
-	fmt.Printf("   Command: %s\n", cmd.Cmd)
 
 	// Print status indicators
 	statusEnabled := "✓"
@@ -98,6 +100,32 @@ func List(commands map[string]Command) {
 	for name, cmd := range commands {
 		PrintCommandDetails(name, cmd)
 	}
+}
+
+// Run executes a command by name
+func Run(commands map[string]Command, commandName string) error {
+	cmd, exists := commands[commandName]
+	if !exists {
+		util.Error("command '%s' not found", commandName)
+	}
+
+	if !cmd.IsEnabled {
+		util.Error("command '%s' is not enabled", commandName)
+	}
+
+	util.Message("Command '%s' is enabled, proceeding with execution", commandName)
+
+	if len(cmd.Projects) == 0 {
+		util.Message("Command '%s' is not associated with any projects", commandName)
+	}
+
+	// Execute the command
+	command := exec.Command("sh", "-c", cmd.Cmd)
+	command.Stdout = os.Stdout
+	command.Stderr = os.Stderr
+	command.Stdin = os.Stdin
+
+	return command.Run()
 }
 
 // Helper function to get a boolean value with a default
