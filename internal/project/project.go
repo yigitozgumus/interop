@@ -3,6 +3,7 @@ package project
 import (
 	"fmt"
 	"interop/internal/settings"
+	"interop/internal/util"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,15 +22,22 @@ func List(cfg *settings.Settings) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		homeDir = ""
-		fmt.Println("Warning: Could not determine home directory")
+		util.Warning("Warning: Could not determine home directory")
 	}
 
 	for name, project := range cfg.Projects {
+		path := project.Path
+
+		// Handle tilde expansion for home directory
+		if strings.HasPrefix(path, "~/") && homeDir != "" {
+			path = filepath.Join(homeDir, path[2:])
+		}
+
 		var fullPath string
-		if filepath.IsAbs(project.Path) {
-			fullPath = project.Path
+		if filepath.IsAbs(path) {
+			fullPath = path
 		} else {
-			fullPath = filepath.Join(homeDir, project.Path)
+			fullPath = filepath.Join(homeDir, path)
 		}
 
 		valid := "✓"
@@ -40,8 +48,8 @@ func List(cfg *settings.Settings) {
 		}
 
 		if homeDir != "" {
-			if filepath.IsAbs(project.Path) {
-				if !strings.HasPrefix(project.Path, homeDir) {
+			if filepath.IsAbs(path) {
+				if !strings.HasPrefix(path, homeDir) {
 					inHomeDir = "✗"
 				}
 			}
