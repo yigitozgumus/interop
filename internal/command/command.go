@@ -5,6 +5,7 @@ import (
 	"interop/internal/util"
 	"os"
 	"os/exec"
+	"path/filepath"
 )
 
 // Command defines a command that can be executed
@@ -103,14 +104,14 @@ func List(commands map[string]Command) {
 }
 
 // Run executes a command by name
-func Run(commands map[string]Command, commandName string) error {
+func Run(commands map[string]Command, commandName string, executablesPath string) error {
 	cmd, exists := commands[commandName]
 	if !exists {
-		util.Error("command '%s' not found", commandName)
+		return fmt.Errorf("command '%s' not found", commandName)
 	}
 
 	if !cmd.IsEnabled {
-		util.Error("command '%s' is not enabled", commandName)
+		return fmt.Errorf("command '%s' is not enabled", commandName)
 	}
 
 	util.Message("Command '%s' is enabled, proceeding with execution", commandName)
@@ -119,8 +120,27 @@ func Run(commands map[string]Command, commandName string) error {
 		util.Message("Command '%s' is not associated with any projects", commandName)
 	}
 
-	// Execute the command
-	command := exec.Command("sh", "-c", cmd.Cmd)
+	var command *exec.Cmd
+
+	if cmd.IsExecutable {
+		// For executable commands, look for the executable in the executables directory
+		execPath := filepath.Join(executablesPath, cmd.Cmd)
+		if _, err := os.Stat(execPath); os.IsNotExist(err) {
+			return fmt.Errorf("executable '%s' not found in executables directory", cmd.Cmd)
+		}
+
+		// Make sure the file is executable
+		if err := os.Chmod(execPath, 0755); err != nil {
+			return fmt.Errorf("failed to set executable permissions: %w", err)
+		}
+
+		util.Message("Found executable '%s', executing", cmd.Cmd)
+		command = exec.Command(execPath)
+	} else {
+		// For regular commands, execute them with the shell
+		command = exec.Command("sh", "-c", cmd.Cmd)
+	}
+
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
 	command.Stdin = os.Stdin

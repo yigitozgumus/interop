@@ -65,9 +65,16 @@ func main() {
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			commandName := args[0]
-			err := command.Run(cfg.Commands, commandName)
+
+			// Get the executables path
+			executablesPath, err := settings.GetExecutablesPath()
 			if err != nil {
-				util.Error(fmt.Sprintf("Failed to run command '%s': %v", commandName, err))
+				util.Error("Failed to get executables path: %v", err)
+			}
+
+			err = command.Run(cfg.Commands, commandName, executablesPath)
+			if err != nil {
+				util.Error("Failed to run command '%s': %v", commandName, err)
 			}
 		},
 	}

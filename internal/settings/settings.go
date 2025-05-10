@@ -144,6 +144,21 @@ func Load() (*Settings, error) {
 	return cfg, err
 }
 
+// GetExecutablesPath returns the path to the executables directory
+func GetExecutablesPath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get user home directory: %w", err)
+	}
+
+	return filepath.Join(
+		homeDir,
+		DefaultPathConfig.SettingsDir,
+		DefaultPathConfig.AppDir,
+		DefaultPathConfig.ExecutablesDir,
+	), nil
+}
+
 // ------- convenience helpers ---------
 
 func Get() *Settings {
