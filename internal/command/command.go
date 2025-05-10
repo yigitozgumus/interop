@@ -63,12 +63,12 @@ func PrintCommandDetails(name string, cmd Command) {
 		statusEnabled = "✗"
 	}
 
-	statusExecutable := "✓"
-	if !cmd.IsExecutable {
-		statusExecutable = "✗"
+	execSource := "Script"
+	if cmd.IsExecutable {
+		execSource = "Executables"
 	}
 
-	fmt.Printf("   Status: Enabled: %s  |  Executable: %s\n", statusEnabled, statusExecutable)
+	fmt.Printf("   Status: Enabled: %s  |  Source: %s\n", statusEnabled, execSource)
 
 	// Print associated projects if any
 	if len(cmd.Projects) > 0 {
