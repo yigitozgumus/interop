@@ -95,7 +95,7 @@ func List(commands map[string]Command) {
 }
 
 // Run executes a command by name
-func Run(commands map[string]Command, commandName string, executablesPath string) error {
+func Run(commands map[string]Command, commandName string, executablesPath string, projectPath ...string) error {
 	cmd, exists := commands[commandName]
 	if !exists {
 		return fmt.Errorf("command '%s' not found", commandName)
@@ -106,6 +106,33 @@ func Run(commands map[string]Command, commandName string, executablesPath string
 	}
 
 	util.Message("Command '%s' is enabled, proceeding with execution", commandName)
+
+	// Store current working directory if we need to change to project directory
+	var currentDir string
+	var err error
+
+	// If project path is provided, change to that directory before running the command
+	if len(projectPath) > 0 && projectPath[0] != "" {
+		// Save current directory to return to after command execution
+		currentDir, err = os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get current working directory: %w", err)
+		}
+
+		// Change to project directory
+		util.Message("Changing to project directory: %s", projectPath[0])
+		if err := os.Chdir(projectPath[0]); err != nil {
+			return fmt.Errorf("failed to change to project directory: %w", err)
+		}
+
+		// Ensure we change back to original directory when done
+		defer func() {
+			util.Message("Changing back to original directory: %s", currentDir)
+			if err := os.Chdir(currentDir); err != nil {
+				util.Error("Failed to change back to original directory: %v", err)
+			}
+		}()
+	}
 
 	var command *exec.Cmd
 

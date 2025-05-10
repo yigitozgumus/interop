@@ -10,6 +10,8 @@ import (
 	"interop/internal/util"
 	"log"
 	"os"
+	"path/filepath"
+	"strings"
 )
 
 var (
@@ -119,7 +121,26 @@ func main() {
 				util.Error("Failed to get executables path: %v", err)
 			}
 
-			err = command.Run(cfg.Commands, commandName, executablesPath)
+			// Get project path for running commands in the correct directory
+			projectPath := project.Path
+
+			// Handle tilde expansion for home directory
+			if strings.HasPrefix(projectPath, "~/") {
+				homeDir, err := os.UserHomeDir()
+				if err != nil {
+					util.Error("Failed to get user home directory: %v", err)
+				}
+				projectPath = filepath.Join(homeDir, projectPath[2:])
+			} else if !filepath.IsAbs(projectPath) {
+				homeDir, err := os.UserHomeDir()
+				if err != nil {
+					util.Error("Failed to get user home directory: %v", err)
+				}
+				projectPath = filepath.Join(homeDir, projectPath)
+			}
+
+			// Run the command in the project directory
+			err = command.Run(cfg.Commands, commandName, executablesPath, projectPath)
 			if err != nil {
 				util.Error("Failed to run command '%s' for project '%s': %v", commandName, projectName, err)
 			}
