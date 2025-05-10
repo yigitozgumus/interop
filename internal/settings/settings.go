@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/BurntSushi/toml"
+	"interop/internal/command"
 	"interop/internal/util"
 	"os"
 	"path/filepath"
@@ -17,8 +18,9 @@ type Project struct {
 }
 
 type Settings struct {
-	LogLevel string             `toml:"log_level"`
-	Projects map[string]Project `toml:"projects"`
+	LogLevel string                     `toml:"log_level"`
+	Projects map[string]Project         `toml:"projects"`
+	Commands map[string]command.Command `toml:"commands"`
 }
 
 // PathConfig defines the directory structure for settings
@@ -70,7 +72,11 @@ func validate() (string, error) {
 	}
 
 	if _, e := os.Stat(path); errors.Is(e, os.ErrNotExist) {
-		def := Settings{LogLevel: "warning", Projects: map[string]Project{}}
+		def := Settings{
+			LogLevel: "warning",
+			Projects: map[string]Project{},
+			Commands: map[string]command.Command{},
+		}
 		f, e := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o644)
 		if e != nil {
 			util.Error("Failed to create settings file: " + e.Error())

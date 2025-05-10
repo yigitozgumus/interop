@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/spf13/cobra"
+	"interop/internal/command"
 	"interop/internal/edit"
 	"interop/internal/project"
 	"interop/internal/settings"
@@ -41,6 +42,16 @@ func main() {
 	}
 
 	rootCmd.AddCommand(projectsCmd)
+
+	commandsCmd := &cobra.Command{
+		Use:   "commands",
+		Short: "List all configured commands",
+		Run: func(cmd *cobra.Command, args []string) {
+			command.List(cfg.Commands)
+		},
+	}
+
+	rootCmd.AddCommand(commandsCmd)
 
 	editCmd := &cobra.Command{
 		Use:   "edit",
