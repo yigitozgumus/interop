@@ -69,6 +69,16 @@ func validate() (string, error) {
 
 	if e := os.MkdirAll(base, 0o755); e != nil {
 		util.Error("Can't create the directory for settings: " + e.Error())
+	} else {
+		util.Message("Settings directory is created")
+	}
+
+	// Create executables directory with executable permissions
+	execDir := filepath.Join(base, pathConfig.ExecutablesDir)
+	if e := os.MkdirAll(execDir, 0o755); e != nil {
+		util.Error("Can't create the directory for executables: " + e.Error())
+	} else {
+		util.Message("executables directory is created")
 	}
 
 	if _, e := os.Stat(path); errors.Is(e, os.ErrNotExist) {
