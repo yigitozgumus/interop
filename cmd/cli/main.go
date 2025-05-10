@@ -43,15 +43,24 @@ func main() {
 
 	rootCmd.AddCommand(projectsCmd)
 
-	commandsCmd := &cobra.Command{
-		Use:   "commands",
+	commandCmd := &cobra.Command{
+		Use:   "command",
+		Short: "Command related operations",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
+	}
+
+	commandListCmd := &cobra.Command{
+		Use:   "list",
 		Short: "List all configured commands",
 		Run: func(cmd *cobra.Command, args []string) {
 			command.List(cfg.Commands)
 		},
 	}
 
-	rootCmd.AddCommand(commandsCmd)
+	commandCmd.AddCommand(commandListCmd)
+	rootCmd.AddCommand(commandCmd)
 
 	editCmd := &cobra.Command{
 		Use:   "edit",
