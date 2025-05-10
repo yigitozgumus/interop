@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/spf13/cobra"
+	"interop/internal/edit"
 	"interop/internal/project"
 	"interop/internal/settings"
 	"interop/internal/util"
@@ -40,6 +41,20 @@ func main() {
 	}
 
 	rootCmd.AddCommand(projectsCmd)
+
+	editCmd := &cobra.Command{
+		Use:   "edit",
+		Short: "Edit the configuration file with your default editor",
+		Run: func(cmd *cobra.Command, args []string) {
+			err := edit.OpenSettings()
+			if err != nil {
+				util.Error(fmt.Sprintf("Failed to open settings file: %v", err))
+				os.Exit(1)
+			}
+		},
+	}
+
+	rootCmd.AddCommand(editCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
