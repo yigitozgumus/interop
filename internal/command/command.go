@@ -10,18 +10,16 @@ import (
 
 // Command defines a command that can be executed
 type Command struct {
-	Description  string   `toml:"description,omitempty"`
-	IsEnabled    bool     `toml:"is_enabled"`
-	Projects     []string `toml:"projects"`
-	Cmd          string   `toml:"cmd"`
-	IsExecutable bool     `toml:"is_executable"`
+	Description  string `toml:"description,omitempty"`
+	IsEnabled    bool   `toml:"is_enabled"`
+	Cmd          string `toml:"cmd"`
+	IsExecutable bool   `toml:"is_executable"`
 }
 
 // NewCommand creates a new Command with default values
 func NewCommand() Command {
 	return Command{
 		IsEnabled:    true,
-		Projects:     []string{},
 		IsExecutable: false,
 	}
 }
@@ -31,7 +29,6 @@ func NewCommand() Command {
 func (c *Command) UnmarshalTOML(data interface{}) error {
 	// Set defaults first
 	c.IsEnabled = true
-	c.Projects = []string{}
 	c.IsExecutable = false
 	c.Description = ""
 
@@ -50,7 +47,6 @@ func (c *Command) UnmarshalTOML(data interface{}) error {
 		}
 		c.IsEnabled = getBoolWithDefault(v, "is_enabled", true)
 		c.IsExecutable = getBoolWithDefault(v, "is_executable", false)
-		c.Projects = getStringSliceWithDefault(v, "projects", []string{})
 	}
 	return nil
 }
@@ -72,11 +68,6 @@ func PrintCommandDetails(name string, cmd Command) {
 	}
 
 	fmt.Printf("   Status: Enabled: %s  |  Source: %s\n", statusEnabled, execSource)
-
-	// Print associated projects if any
-	if len(cmd.Projects) > 0 {
-		fmt.Printf("   Projects: %v\n", cmd.Projects)
-	}
 
 	// Print description if exists
 	if cmd.Description != "" {
@@ -116,10 +107,6 @@ func Run(commands map[string]Command, commandName string, executablesPath string
 
 	util.Message("Command '%s' is enabled, proceeding with execution", commandName)
 
-	if len(cmd.Projects) == 0 {
-		util.Message("Command '%s' is not associated with any projects", commandName)
-	}
-
 	var command *exec.Cmd
 
 	if cmd.IsExecutable {
@@ -152,24 +139,6 @@ func Run(commands map[string]Command, commandName string, executablesPath string
 func getBoolWithDefault(m map[string]interface{}, key string, defaultValue bool) bool {
 	if val, ok := m[key].(bool); ok {
 		return val
-	}
-	return defaultValue
-}
-
-// Helper function to get a string slice with a default
-func getStringSliceWithDefault(m map[string]interface{}, key string, defaultValue []string) []string {
-	if val, ok := m[key]; ok {
-		// Handle both array and single string cases
-		switch v := val.(type) {
-		case []interface{}:
-			result := make([]string, len(v))
-			for i, item := range v {
-				if s, ok := item.(string); ok {
-					result[i] = s
-				}
-			}
-			return result
-		}
 	}
 	return defaultValue
 }

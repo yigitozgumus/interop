@@ -13,8 +13,9 @@ import (
 )
 
 type Project struct {
-	Path        string `toml:"path"`
-	Description string `toml:"description,omitempty"`
+	Path        string   `toml:"path"`
+	Description string   `toml:"description,omitempty"`
+	Commands    []string `toml:"commands,omitempty"`
 }
 
 type Settings struct {
@@ -159,8 +160,55 @@ func GetExecutablesPath() (string, error) {
 	), nil
 }
 
-// ------- convenience helpers ---------
+// ParseStringSlice parses a TOML value into a string slice
+func ParseStringSlice(value interface{}) []string {
+	if value == nil {
+		return []string{}
+	}
 
+	switch v := value.(type) {
+	case []interface{}:
+		result := make([]string, len(v))
+		for i, item := range v {
+			if s, ok := item.(string); ok {
+				result[i] = s
+			}
+		}
+		return result
+	case string:
+		// Single string case
+		return []string{v}
+	}
+
+	return []string{}
+}
+
+// GetProjectCommands returns the list of commands associated with a project
+func GetProjectCommands(cfg *Settings, projectName string) (map[string]command.Command, error) {
+	project, exists := cfg.Projects[projectName]
+	if !exists {
+		return nil, fmt.Errorf("project '%s' not found", projectName)
+	}
+
+	result := make(map[string]command.Command)
+
+	// If no commands are defined for the project, return empty map
+	if len(project.Commands) == 0 {
+		return result, nil
+	}
+
+	// Collect all commands that are listed in the project
+	for _, cmdName := range project.Commands {
+		cmd, exists := cfg.Commands[cmdName]
+		if exists {
+			result[cmdName] = cmd
+		}
+	}
+
+	return result, nil
+}
+
+// Get returns the settings
 func Get() *Settings {
 	c, e := Load()
 	if e != nil {
