@@ -10,8 +10,6 @@ import (
 	"interop/internal/util"
 	"log"
 	"os"
-	"path/filepath"
-	"strings"
 )
 
 var (
@@ -81,86 +79,6 @@ func main() {
 		},
 	}
 	projectCmd.AddCommand(projectCommandsCmd)
-
-	// Add a single 'run' command for projects
-	projectRunCmd := &cobra.Command{
-		Use:   "run [project-name] [command-name]",
-		Short: "Run a command for a specific project",
-		Args:  cobra.ExactArgs(2),
-		Run: func(cmd *cobra.Command, args []string) {
-			projectName := args[0]
-			commandName := args[1]
-
-			// Verify project exists
-			project, exists := cfg.Projects[projectName]
-			if !exists {
-				util.Error("Project '%s' not found", projectName)
-			}
-
-			// Verify command is associated with project
-			found := false
-			for _, cmdName := range project.Commands {
-				if cmdName == commandName {
-					found = true
-					break
-				}
-			}
-
-			if !found {
-				util.Error("Command '%s' is not associated with project '%s'", commandName, projectName)
-			}
-
-			// Check if command exists in config
-			if _, exists := cfg.Commands[commandName]; !exists {
-				util.Error("Command '%s' not found in configuration", commandName)
-			}
-
-			// Get executables path and run the command
-			executablesPath, err := settings.GetExecutablesPath()
-			if err != nil {
-				util.Error("Failed to get executables path: %v", err)
-			}
-
-			// Get project path for running commands in the correct directory
-			projectPath := project.Path
-
-			// Handle tilde expansion for home directory
-			if strings.HasPrefix(projectPath, "~/") {
-				homeDir, err := os.UserHomeDir()
-				if err != nil {
-					util.Error("Failed to get user home directory: %v", err)
-				}
-				projectPath = filepath.Join(homeDir, projectPath[2:])
-			} else if !filepath.IsAbs(projectPath) {
-				homeDir, err := os.UserHomeDir()
-				if err != nil {
-					util.Error("Failed to get user home directory: %v", err)
-				}
-				projectPath = filepath.Join(homeDir, projectPath)
-			}
-
-			// Run the command in the project directory
-			err = command.Run(cfg.Commands, commandName, executablesPath, projectPath)
-			if err != nil {
-				util.Error("Failed to run command '%s' for project '%s': %v", commandName, projectName, err)
-			}
-		},
-	}
-	projectCmd.AddCommand(projectRunCmd)
-
-	// Create project-specific subcommands for each project
-	for projectName := range cfg.Projects {
-		// Create a project-specific command
-		projectSpecificCmd := &cobra.Command{
-			Use:   projectName,
-			Short: fmt.Sprintf("Operations for project '%s'", projectName),
-			Run: func(cmd *cobra.Command, args []string) {
-				cmd.Help()
-			},
-		}
-
-		projectCmd.AddCommand(projectSpecificCmd)
-	}
 
 	rootCmd.AddCommand(projectCmd)
 

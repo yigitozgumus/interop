@@ -12,10 +12,15 @@ import (
 	"sync"
 )
 
+type Alias struct {
+	CommandName string `toml:"command_name"`
+	Alias       string `toml:"alias,omitempty"`
+}
+
 type Project struct {
-	Path        string   `toml:"path"`
-	Description string   `toml:"description,omitempty"`
-	Commands    []string `toml:"commands,omitempty"`
+	Path        string  `toml:"path"`
+	Description string  `toml:"description,omitempty"`
+	Commands    []Alias `toml:"commands,omitempty"`
 }
 
 type Settings struct {
@@ -198,10 +203,15 @@ func GetProjectCommands(cfg *Settings, projectName string) (map[string]command.C
 	}
 
 	// Collect all commands that are listed in the project
-	for _, cmdName := range project.Commands {
-		cmd, exists := cfg.Commands[cmdName]
+	for _, alias := range project.Commands {
+		cmd, exists := cfg.Commands[alias.CommandName]
 		if exists {
-			result[cmdName] = cmd
+			// Use the alias if provided, otherwise use the original command name
+			cmdKey := alias.CommandName
+			if alias.Alias != "" {
+				cmdKey = alias.Alias
+			}
+			result[cmdKey] = cmd
 		}
 	}
 
