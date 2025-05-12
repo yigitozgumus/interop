@@ -3,6 +3,7 @@ package mcp
 import (
 	"fmt"
 	"interop/internal/logging"
+	"interop/internal/settings"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -57,6 +58,8 @@ func (s *Server) Start() error {
 		return fmt.Errorf("failed to get executable path: %w", err)
 	}
 
+	port := settings.GetMCPPort()
+
 	// Prepare command to run server in daemon mode
 	// We use the current executable with a special flag to run the HTTP server
 	cmd := exec.Command(executable, "mcp", "daemon")
@@ -77,8 +80,17 @@ func (s *Server) Start() error {
 	}
 
 	logging.Message("MCP server started with PID %d", pid)
-	logging.Message("HTTP server available at http://localhost:8080")
+	logging.Message("HTTP server available at http://localhost:%d", port)
 	return nil
+}
+
+// loadSettings loads the settings file to get the port configuration
+func loadSettings() (*settings.Settings, error) {
+	cfg, err := settings.Load()
+	if err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
 // Stop terminates the MCP server
@@ -155,7 +167,10 @@ func (s *Server) IsRunning() bool {
 func (s *Server) Status() string {
 	if s.IsRunning() {
 		pid, _ := s.getPid()
-		return fmt.Sprintf("MCP server is running (PID: %d)\nHTTP server available at http://localhost:8080", pid)
+
+		port := settings.GetMCPPort()
+
+		return fmt.Sprintf("MCP server is running (PID: %d)\nHTTP server available at http://localhost:%d", pid, port)
 	}
 	return "MCP server is not running"
 }

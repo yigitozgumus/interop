@@ -104,8 +104,7 @@ func NewMCPLibServer() (*MCPLibServer, error) {
 		return nil, fmt.Errorf("failed to load settings: %w", err)
 	}
 
-	// Set up the port
-	port := 8080
+	port := settings.GetMCPPort()
 
 	// Create MCP server with logging disabled
 	mcpServer := server.NewMCPServer(

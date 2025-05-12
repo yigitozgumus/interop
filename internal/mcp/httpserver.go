@@ -72,8 +72,10 @@ func NewMCPServer() (*MCPServer, error) {
 		return nil, fmt.Errorf("failed to load settings: %w", err)
 	}
 
+	port := settings.GetMCPPort()
+
 	server := &MCPServer{
-		Port:     8080,
+		Port:     port,
 		DataDir:  dataDir,
 		Commands: cfg.Commands,
 		handlers: make(map[string]http.HandlerFunc),

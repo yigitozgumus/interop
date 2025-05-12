@@ -209,6 +209,7 @@ type Settings struct {
 	Projects              map[string]Project       `toml:"projects"`
 	Commands              map[string]CommandConfig `toml:"commands"`
 	ExecutableSearchPaths []string                 `toml:"executable_search_paths"`
+	MCPPort               int                      `toml:"mcp_port"`
 }
 
 // PathConfig defines the directory structure for settings
@@ -274,6 +275,7 @@ func validate() (string, error) {
 			LogLevel: "warning",
 			Projects: map[string]Project{},
 			Commands: map[string]CommandConfig{},
+			MCPPort:  cfg.MCPPort,
 		}
 		f, e := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o644)
 		if e != nil {
@@ -339,6 +341,14 @@ func Load() (*Settings, error) {
 		cfg = &c
 	})
 	return cfg, err
+}
+
+func GetMCPPort() int {
+	cfg, err := Load()
+	if err != nil {
+		logging.Error("Failed to load settings: " + err.Error())
+	}
+	return cfg.MCPPort
 }
 
 // GetExecutablesPath returns the path to the executables directory

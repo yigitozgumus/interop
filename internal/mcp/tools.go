@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"interop/internal/settings"
 	"io"
 	"math"
 	"net/http"
@@ -24,8 +25,11 @@ type SSEHandler func(event string, data string)
 
 // NewToolsClient creates a new client for the MCP server
 func NewToolsClient() *ToolsClient {
+
+	port := settings.GetMCPPort()
+
 	return &ToolsClient{
-		BaseURL: "http://localhost:8080",
+		BaseURL: fmt.Sprintf("http://localhost:%d", port),
 		Client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
