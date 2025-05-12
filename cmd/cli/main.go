@@ -5,12 +5,14 @@ import (
 	"interop/internal/command"
 	"interop/internal/edit"
 	"interop/internal/logging"
+	"interop/internal/mcp"
 	projectPkg "interop/internal/project"
 	"interop/internal/settings"
 	"interop/internal/validation"
 	"interop/internal/validation/project"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -110,6 +112,170 @@ func main() {
 	}
 
 	rootCmd.AddCommand(editCmd)
+
+	// Add MCP command group
+	mcpCmd := &cobra.Command{
+		Use:   "mcp",
+		Short: "Manage MCP server",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
+	}
+
+	// MCP start command
+	mcpStartCmd := &cobra.Command{
+		Use:   "start",
+		Short: "Start the MCP server",
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := mcp.StartServer(); err != nil {
+				logging.ErrorAndExit("Failed to start MCP server: %v", err)
+			}
+		},
+	}
+	mcpCmd.AddCommand(mcpStartCmd)
+
+	// MCP stop command
+	mcpStopCmd := &cobra.Command{
+		Use:   "stop",
+		Short: "Stop the MCP server",
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := mcp.StopServer(); err != nil {
+				logging.ErrorAndExit("Failed to stop MCP server: %v", err)
+			}
+		},
+	}
+	mcpCmd.AddCommand(mcpStopCmd)
+
+	// MCP restart command
+	mcpRestartCmd := &cobra.Command{
+		Use:   "restart",
+		Short: "Restart the MCP server",
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := mcp.RestartServer(); err != nil {
+				logging.ErrorAndExit("Failed to restart MCP server: %v", err)
+			}
+		},
+	}
+	mcpCmd.AddCommand(mcpRestartCmd)
+
+	// MCP status command
+	mcpStatusCmd := &cobra.Command{
+		Use:   "status",
+		Short: "Get the status of the MCP server",
+		Run: func(cmd *cobra.Command, args []string) {
+			status, err := mcp.GetStatus()
+			if err != nil {
+				logging.ErrorAndExit("Failed to get MCP server status: %v", err)
+			}
+			fmt.Println(status)
+		},
+	}
+	mcpCmd.AddCommand(mcpStatusCmd)
+
+	// Hidden daemon command for internal use
+	mcpDaemonCmd := &cobra.Command{
+		Use:    "daemon",
+		Short:  "Run the MCP HTTP server (internal use only)",
+		Hidden: true,
+		Run: func(cmd *cobra.Command, args []string) {
+			server, err := mcp.NewServer()
+			if err != nil {
+				logging.ErrorAndExit("Failed to initialize MCP server: %v", err)
+			}
+
+			if err := server.RunHTTPServer(); err != nil {
+				logging.ErrorAndExit("Failed to run HTTP server: %v", err)
+			}
+		},
+	}
+	mcpCmd.AddCommand(mcpDaemonCmd)
+
+	// MCP tools command group
+	mcpToolsCmd := &cobra.Command{
+		Use:   "tools",
+		Short: "Interact with MCP server tools",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
+	}
+
+	// MCP tools health command
+	mcpToolsHealthCmd := &cobra.Command{
+		Use:   "health",
+		Short: "Check MCP server health",
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := mcp.GetServerHealth(); err != nil {
+				logging.ErrorAndExit("Health check failed: %v", err)
+			}
+		},
+	}
+	mcpToolsCmd.AddCommand(mcpToolsHealthCmd)
+
+	// MCP tools list command
+	mcpToolsListCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List available MCP tools",
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := mcp.ListServerTools(); err != nil {
+				logging.ErrorAndExit("Failed to list tools: %v", err)
+			}
+		},
+	}
+	mcpToolsCmd.AddCommand(mcpToolsListCmd)
+
+	// MCP commands list command
+	mcpToolsCommandsCmd := &cobra.Command{
+		Use:   "commands",
+		Short: "List available MCP commands",
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := mcp.ListServerCommands(); err != nil {
+				logging.ErrorAndExit("Failed to list commands: %v", err)
+			}
+		},
+	}
+	mcpToolsCmd.AddCommand(mcpToolsCommandsCmd)
+
+	// MCP execute command
+	mcpToolsExecuteCmd := &cobra.Command{
+		Use:   "execute [command] [args]",
+		Short: "Execute a command through MCP server",
+		Args:  cobra.MinimumNArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			commandName := args[0]
+
+			// Parse arguments in format key=value
+			cmdArgs := make(map[string]interface{})
+			for i := 1; i < len(args); i++ {
+				parts := strings.SplitN(args[i], "=", 2)
+				if len(parts) == 2 {
+					cmdArgs[parts[0]] = parts[1]
+				}
+			}
+
+			if err := mcp.ExecuteServerCommand(commandName, cmdArgs); err != nil {
+				logging.ErrorAndExit("Failed to execute command: %v", err)
+			}
+		},
+	}
+	mcpToolsCmd.AddCommand(mcpToolsExecuteCmd)
+
+	// MCP events command
+	mcpToolsEventsCmd := &cobra.Command{
+		Use:   "events",
+		Short: "Stream real-time events from the MCP server",
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := mcp.StreamServerEvents(); err != nil {
+				logging.ErrorAndExit("Failed to stream events: %v", err)
+			}
+		},
+	}
+	mcpToolsCmd.AddCommand(mcpToolsEventsCmd)
+
+	// Add tools command to MCP command group
+	mcpCmd.AddCommand(mcpToolsCmd)
+
+	// Add MCP command group to root command
+	rootCmd.AddCommand(mcpCmd)
 
 	// Add validation command to check configuration
 	validateCmd := &cobra.Command{
