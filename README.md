@@ -60,6 +60,17 @@ cmd = "deploy.sh"
 description = "Deploy the project"
 is_enabled = true
 is_executable = true
+
+# Example of a command with arguments
+[commands.build-app]
+cmd = "go build -o ${output_file} ${package}"
+description = "Build a Go application"
+is_enabled = true
+is_executable = false
+arguments = [
+  { name = "output_file", type = "string", description = "Output file name", required = true },
+  { name = "package", type = "string", description = "Package to build", default = "./cmd/app" }
+]
 ```
 
 ## Usage
@@ -145,6 +156,51 @@ Commands can be:
 - Regular shell commands (executed via shell)
 - Executable files (from the executables directory)
 - Enabled/disabled as needed
+
+### Command Arguments
+
+Commands can be defined with typed arguments that add validation and better integration with tools:
+
+```toml
+[commands.build-app]
+cmd = "go build -o ${output_file} ${package}"
+description = "Build a Go application"
+arguments = [
+  { name = "output_file", type = "string", description = "Output file name", required = true },
+  { name = "package", type = "string", description = "Package to build", default = "./cmd/app" }
+]
+```
+
+Argument features:
+- **Types**: Support for `string`, `number`, and `bool` types
+- **Required Fields**: Mark arguments as required
+- **Default Values**: Provide defaults for optional arguments
+- **Descriptions**: Document the purpose of each argument
+
+Arguments can be provided when running commands:
+
+```bash
+# Using the CLI with named arguments
+interop run build-app output_file=myapp
+
+# Using named arguments with the MCP tools interface
+interop mcp tools execute build-app output_file=myapp package=./cmd/server
+
+# Using positional arguments in the order they are defined
+interop mcp tools execute build-app myapp ./cmd/server
+```
+
+The system will automatically:
+1. Validate that all required arguments are provided
+2. Convert arguments to the correct type
+3. Apply default values for missing optional arguments
+4. Replace the placeholders in the command string with the actual values
+
+When using positional arguments:
+- Arguments are matched in the order they are defined in the command configuration
+- Values are automatically converted to the correct type based on the argument definition
+- If fewer arguments are provided than defined, default values will be used for optional arguments
+- Extra positional arguments beyond the defined arguments will be ignored with a warning
 
 ### Command Types and Execution
 

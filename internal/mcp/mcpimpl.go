@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -147,15 +148,34 @@ func (s *MCPLibServer) registerCommandTools() {
 			continue
 		}
 
-		// Create a tool for each command
-		tool := mcp.NewTool(
-			name,
+		// Create tool options
+		toolOptions := []mcp.ToolOption{
 			mcp.WithDescription(cmd.Description),
-			// Add parameters object for command arguments
-			mcp.WithObject("args",
-				mcp.Description("Optional arguments for the command"),
-			),
-		)
+		}
+
+		// If the command has defined arguments, add them as separate parameters
+		if len(cmd.Arguments) > 0 {
+			for _, arg := range cmd.Arguments {
+				// Add all arguments as strings for simplicity
+				// The MCP library seems to only support strings and objects
+				description := arg.Description
+				if arg.Type != settings.ArgumentTypeString {
+					description = fmt.Sprintf("%s (type: %s)", description, arg.Type)
+				}
+
+				toolOptions = append(toolOptions,
+					mcp.WithString(arg.Name, mcp.Description(description)),
+				)
+			}
+		} else {
+			// For backward compatibility, keep the old 'args' parameter
+			toolOptions = append(toolOptions,
+				mcp.WithObject("args", mcp.Description("Optional arguments for the command")),
+			)
+		}
+
+		// Create the tool with all options
+		tool := mcp.NewTool(name, toolOptions...)
 
 		// Store the command in a local variable to avoid closure issues
 		cmdConfig := cmd
@@ -163,11 +183,48 @@ func (s *MCPLibServer) registerCommandTools() {
 
 		// Add the tool handler
 		s.mcpServer.AddTool(tool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			// Get args if provided
+			// Handle arguments according to how they were defined
 			var args map[string]interface{}
-			if rawArgs, ok := request.Params.Arguments["args"]; ok {
-				if argsMap, ok := rawArgs.(map[string]interface{}); ok {
-					args = argsMap
+			if len(cmdConfig.Arguments) > 0 {
+				// For commands with defined arguments, extract each from the request
+				args = make(map[string]interface{})
+				for _, arg := range cmdConfig.Arguments {
+					if value, ok := request.Params.Arguments[arg.Name]; ok {
+						// Convert values based on the expected type
+						switch arg.Type {
+						case settings.ArgumentTypeNumber:
+							// Try to convert string to number if needed
+							if strVal, ok := value.(string); ok {
+								if numVal, err := strconv.ParseFloat(strVal, 64); err == nil {
+									args[arg.Name] = numVal
+								} else {
+									args[arg.Name] = value
+								}
+							} else {
+								args[arg.Name] = value
+							}
+						case settings.ArgumentTypeBool:
+							// Try to convert string to bool if needed
+							if strVal, ok := value.(string); ok {
+								if boolVal, err := strconv.ParseBool(strVal); err == nil {
+									args[arg.Name] = boolVal
+								} else {
+									args[arg.Name] = value
+								}
+							} else {
+								args[arg.Name] = value
+							}
+						default:
+							args[arg.Name] = value
+						}
+					}
+				}
+			} else {
+				// For legacy commands, use the 'args' object if provided
+				if rawArgs, ok := request.Params.Arguments["args"]; ok {
+					if argsMap, ok := rawArgs.(map[string]interface{}); ok {
+						args = argsMap
+					}
 				}
 			}
 
@@ -288,14 +345,81 @@ func (s *MCPLibServer) registerCommandTools() {
 
 // executeCommand runs a command and returns its output
 func (s *MCPLibServer) executeCommand(name, cmdStr string, args map[string]interface{}) (string, error) {
-	// Replace arguments placeholders if any
-	for key, value := range args {
-		placeholder := "${" + key + "}"
-		valueStr := fmt.Sprintf("%v", value)
-		cmdStr = strings.ReplaceAll(cmdStr, placeholder, valueStr)
+	// Get the command from config
+	cmdConfig, exists := s.commandConfig[name]
+	if !exists {
+		return "", fmt.Errorf("command '%s' not found", name)
 	}
 
-	s.logInfo("Executing command: %s (%s)", name, cmdStr)
+	// Check if command is enabled
+	if !cmdConfig.IsEnabled {
+		return "", fmt.Errorf("command '%s' is disabled", name)
+	}
+
+	// Validate arguments if defined
+	if len(cmdConfig.Arguments) > 0 {
+		if err := cmdConfig.ValidateArgs(args); err != nil {
+			return "", fmt.Errorf("argument validation failed: %w", err)
+		}
+	}
+
+	// Create a copy of the command string for substitution
+	processedCmd := cmdStr
+
+	// First pass: replace argument placeholders with their values
+	for _, argDef := range cmdConfig.Arguments {
+		// Get the value (using default if not provided)
+		value, err := cmdConfig.GetArgumentValue(argDef.Name, args)
+		if err != nil {
+			return "", fmt.Errorf("error getting argument value: %w", err)
+		}
+
+		// If the value is nil (not provided and no default), skip replacement
+		if value == nil {
+			continue
+		}
+
+		// Convert value to string based on type
+		var valueStr string
+		switch argDef.Type {
+		case settings.ArgumentTypeBool:
+			if boolVal, ok := value.(bool); ok {
+				valueStr = fmt.Sprintf("%v", boolVal)
+			} else {
+				valueStr = fmt.Sprintf("%v", value)
+			}
+		case settings.ArgumentTypeNumber:
+			valueStr = fmt.Sprintf("%v", value)
+		default: // string or any other type
+			valueStr = fmt.Sprintf("%v", value)
+		}
+
+		// Replace placeholder
+		placeholder := "${" + argDef.Name + "}"
+		processedCmd = strings.ReplaceAll(processedCmd, placeholder, valueStr)
+	}
+
+	// Second pass: handle any non-defined arguments (for backward compatibility)
+	for key, value := range args {
+		// Skip arguments that were already processed
+		alreadyProcessed := false
+		for _, argDef := range cmdConfig.Arguments {
+			if key == argDef.Name {
+				alreadyProcessed = true
+				break
+			}
+		}
+		if alreadyProcessed {
+			continue
+		}
+
+		// Replace the placeholder with the value
+		placeholder := "${" + key + "}"
+		valueStr := fmt.Sprintf("%v", value)
+		processedCmd = strings.ReplaceAll(processedCmd, placeholder, valueStr)
+	}
+
+	s.logInfo("Executing command: %s (%s)", name, processedCmd)
 
 	// Create a temporary file for output
 	tmpDir, err := os.MkdirTemp(s.configDir, "cmd-output-*")
@@ -312,7 +436,7 @@ func (s *MCPLibServer) executeCommand(name, cmdStr string, args map[string]inter
 	defer outFile.Close()
 
 	// Execute command
-	cmd := exec.Command("sh", "-c", cmdStr)
+	cmd := exec.Command("sh", "-c", processedCmd)
 	cmd.Stdout = outFile
 	cmd.Stderr = outFile
 

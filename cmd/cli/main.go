@@ -12,6 +12,7 @@ import (
 	"interop/internal/validation/project"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -239,16 +240,72 @@ func main() {
 	mcpToolsExecuteCmd := &cobra.Command{
 		Use:   "execute [command] [args]",
 		Short: "Execute a command through MCP server",
-		Args:  cobra.MinimumNArgs(1),
+		Long: `Execute a command through the MCP server with arguments.
+Arguments can be provided in two ways:
+1. Named arguments in the format key=value
+2. Positional arguments in the order they are defined in the command configuration
+
+Supported value formats:
+- Strings: value or key=value
+- Numbers: 123 or key=123 (or 12.34 or key=12.34)
+- Booleans: true/false or key=true/key=false
+
+Examples:
+  interop mcp tools execute build-app
+  interop mcp tools execute build-app output.exe
+  interop mcp tools execute build-app output.exe ./src/main.go
+  interop mcp tools execute build-app version=1.0.0
+  interop mcp tools execute deploy-app environment=production force=true`,
+		Args: cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			commandName := args[0]
 
-			// Parse arguments in format key=value
+			// Get command configuration to determine defined arguments
+			cfg, err := settings.Load()
+			if err != nil {
+				logging.ErrorAndExit("Failed to load settings: %v", err)
+			}
+
+			// Get the command config to check for defined arguments
+			cmdConfig, exists := cfg.Commands[commandName]
+			if !exists {
+				logging.ErrorAndExit("Command '%s' not found", commandName)
+			}
+
+			// Parse arguments
 			cmdArgs := make(map[string]interface{})
+
+			// Track which positional index we're at
+			positionalIndex := 0
+
+			// Process each provided argument
 			for i := 1; i < len(args); i++ {
-				parts := strings.SplitN(args[i], "=", 2)
-				if len(parts) == 2 {
-					cmdArgs[parts[0]] = parts[1]
+				// Check if it's a named argument (key=value format)
+				if strings.Contains(args[i], "=") {
+					parts := strings.SplitN(args[i], "=", 2)
+					if len(parts) == 2 {
+						key := parts[0]
+						rawValue := parts[1]
+
+						// Process the value with type detection
+						parsedValue := parseArgumentValue(rawValue)
+						cmdArgs[key] = parsedValue
+					}
+				} else {
+					// It's a positional argument
+					// Check if we have a corresponding argument definition
+					if positionalIndex < len(cmdConfig.Arguments) {
+						argDef := cmdConfig.Arguments[positionalIndex]
+
+						// Process the value according to the defined type
+						parsedValue := parseArgumentValueWithType(args[i], argDef.Type)
+						cmdArgs[argDef.Name] = parsedValue
+
+						positionalIndex++
+					} else {
+						// More positional arguments than defined - warn user
+						logging.Warning("Ignoring extra positional argument: %s", args[i])
+					}
 				}
 			}
 
@@ -348,4 +405,52 @@ func getVersionInfo() string {
 		versionInfo += " (snapshot)"
 	}
 	return versionInfo
+}
+
+// Helper function to parse argument values with type detection
+func parseArgumentValue(rawValue string) interface{} {
+	// Try to detect boolean values
+	if strings.EqualFold(rawValue, "true") {
+		return true
+	}
+	if strings.EqualFold(rawValue, "false") {
+		return false
+	}
+
+	// Try to detect numeric values
+	if intVal, err := strconv.ParseInt(rawValue, 10, 64); err == nil {
+		return intVal
+	}
+	if floatVal, err := strconv.ParseFloat(rawValue, 64); err == nil {
+		return floatVal
+	}
+
+	// Default to string value
+	return rawValue
+}
+
+// Helper function to parse argument values with a specified type
+func parseArgumentValueWithType(rawValue string, argType settings.ArgumentType) interface{} {
+	switch argType {
+	case settings.ArgumentTypeBool:
+		if strings.EqualFold(rawValue, "true") {
+			return true
+		}
+		if strings.EqualFold(rawValue, "false") {
+			return false
+		}
+		// If it doesn't match true/false, keep it as string
+		return rawValue
+	case settings.ArgumentTypeNumber:
+		if intVal, err := strconv.ParseInt(rawValue, 10, 64); err == nil {
+			return intVal
+		}
+		if floatVal, err := strconv.ParseFloat(rawValue, 64); err == nil {
+			return floatVal
+		}
+		// If it's not a valid number, keep it as string
+		return rawValue
+	default: // String or any other type
+		return rawValue
+	}
 }

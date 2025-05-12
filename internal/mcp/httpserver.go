@@ -210,9 +210,63 @@ func (s *MCPServer) executeCommand(cmdName string, args map[string]interface{}) 
 		return response, fmt.Errorf("command '%s' is disabled", cmdName)
 	}
 
+	// Validate arguments if defined
+	if len(cmd.Arguments) > 0 {
+		if err := cmd.ValidateArgs(args); err != nil {
+			return response, fmt.Errorf("argument validation failed: %w", err)
+		}
+	}
+
 	// Prepare command string with arguments
 	cmdString := cmd.Cmd
+
+	// First pass: replace argument placeholders with their values from definitions
+	for _, argDef := range cmd.Arguments {
+		// Get the value (using default if not provided)
+		value, err := cmd.GetArgumentValue(argDef.Name, args)
+		if err != nil {
+			return response, fmt.Errorf("error getting argument value: %w", err)
+		}
+
+		// If the value is nil (not provided and no default), skip replacement
+		if value == nil {
+			continue
+		}
+
+		// Convert value to string based on type
+		var valueStr string
+		switch argDef.Type {
+		case settings.ArgumentTypeBool:
+			if boolVal, ok := value.(bool); ok {
+				valueStr = fmt.Sprintf("%v", boolVal)
+			} else {
+				valueStr = fmt.Sprintf("%v", value)
+			}
+		case settings.ArgumentTypeNumber:
+			valueStr = fmt.Sprintf("%v", value)
+		default: // string or any other type
+			valueStr = fmt.Sprintf("%v", value)
+		}
+
+		// Replace placeholder
+		placeholder := "${" + argDef.Name + "}"
+		cmdString = strings.ReplaceAll(cmdString, placeholder, valueStr)
+	}
+
+	// Second pass: handle any non-defined arguments (for backward compatibility)
 	for key, value := range args {
+		// Skip arguments that were already processed
+		alreadyProcessed := false
+		for _, argDef := range cmd.Arguments {
+			if key == argDef.Name {
+				alreadyProcessed = true
+				break
+			}
+		}
+		if alreadyProcessed {
+			continue
+		}
+
 		// Replace ${key} with value in cmdString
 		placeholder := "${" + key + "}"
 		valStr := fmt.Sprintf("%v", value)

@@ -24,12 +24,34 @@ type Project struct {
 	Commands    []Alias `toml:"commands,omitempty"`
 }
 
+// ArgumentType defines the type of a command argument
+type ArgumentType string
+
+const (
+	// ArgumentTypeString represents a string argument
+	ArgumentTypeString ArgumentType = "string"
+	// ArgumentTypeNumber represents a numeric argument
+	ArgumentTypeNumber ArgumentType = "number"
+	// ArgumentTypeBool represents a boolean argument
+	ArgumentTypeBool ArgumentType = "bool"
+)
+
+// CommandArgument represents an argument definition for a command
+type CommandArgument struct {
+	Name        string       `toml:"name"`                  // Argument name
+	Type        ArgumentType `toml:"type,omitempty"`        // Argument type (string, number, bool)
+	Description string       `toml:"description,omitempty"` // Description of the argument
+	Required    bool         `toml:"required,omitempty"`    // Whether the argument is required
+	Default     interface{}  `toml:"default,omitempty"`     // Default value if not provided
+}
+
 // CommandConfig represents a command that can be executed
 type CommandConfig struct {
-	Description  string `toml:"description,omitempty"`
-	IsEnabled    bool   `toml:"is_enabled"`
-	Cmd          string `toml:"cmd"`
-	IsExecutable bool   `toml:"is_executable"`
+	Description  string            `toml:"description,omitempty"`
+	IsEnabled    bool              `toml:"is_enabled"`
+	Cmd          string            `toml:"cmd"`
+	IsExecutable bool              `toml:"is_executable"`
+	Arguments    []CommandArgument `toml:"arguments,omitempty"` // Argument definitions for the command
 }
 
 // NewCommandConfig creates a new CommandConfig with default values
@@ -37,6 +59,7 @@ func NewCommandConfig() CommandConfig {
 	return CommandConfig{
 		IsEnabled:    true,
 		IsExecutable: false,
+		Arguments:    []CommandArgument{},
 	}
 }
 
@@ -47,6 +70,7 @@ func (c *CommandConfig) UnmarshalTOML(data interface{}) error {
 	c.IsEnabled = true
 	c.IsExecutable = false
 	c.Description = ""
+	c.Arguments = []CommandArgument{}
 
 	// Handle different input cases
 	switch v := data.(type) {
@@ -63,7 +87,112 @@ func (c *CommandConfig) UnmarshalTOML(data interface{}) error {
 		}
 		c.IsEnabled = getBoolWithDefault(v, "is_enabled", true)
 		c.IsExecutable = getBoolWithDefault(v, "is_executable", false)
+
+		// Parse arguments if present
+		if args, ok := v["arguments"].([]interface{}); ok {
+			for _, arg := range args {
+				if argMap, ok := arg.(map[string]interface{}); ok {
+					argument := CommandArgument{}
+
+					// Required fields
+					if name, ok := argMap["name"].(string); ok {
+						argument.Name = name
+					} else {
+						continue // Skip if no name
+					}
+
+					// Optional fields
+					if typeStr, ok := argMap["type"].(string); ok {
+						argument.Type = ArgumentType(typeStr)
+					} else {
+						argument.Type = ArgumentTypeString // Default to string
+					}
+
+					if desc, ok := argMap["description"].(string); ok {
+						argument.Description = desc
+					}
+
+					if required, ok := argMap["required"].(bool); ok {
+						argument.Required = required
+					}
+
+					if def, ok := argMap["default"]; ok {
+						argument.Default = def
+					}
+
+					c.Arguments = append(c.Arguments, argument)
+				}
+			}
+		}
 	}
+	return nil
+}
+
+// GetArgumentValue retrieves the value for an argument from the provided arguments map
+// It will use the default value if the argument is not provided and has a default
+// Returns an error if a required argument is missing
+func (c *CommandConfig) GetArgumentValue(argName string, providedArgs map[string]interface{}) (interface{}, error) {
+	// Look for the argument definition
+	var argDef *CommandArgument
+	for _, arg := range c.Arguments {
+		if arg.Name == argName {
+			argDef = &arg
+			break
+		}
+	}
+
+	// If no definition found, just return the provided value or nil
+	if argDef == nil {
+		if value, exists := providedArgs[argName]; exists {
+			return value, nil
+		}
+		return nil, nil
+	}
+
+	// Check if the argument is provided
+	if value, exists := providedArgs[argName]; exists {
+		return value, nil
+	}
+
+	// If not provided, check if it's required
+	if argDef.Required {
+		return nil, fmt.Errorf("required argument '%s' is missing", argName)
+	}
+
+	// If not required, return the default value
+	return argDef.Default, nil
+}
+
+// ValidateArgs checks if all required arguments are provided and all provided arguments are defined
+// Returns an error if validation fails
+func (c *CommandConfig) ValidateArgs(args map[string]interface{}) error {
+	// Check if all required arguments are provided
+	for _, arg := range c.Arguments {
+		if arg.Required {
+			if _, exists := args[arg.Name]; !exists {
+				if arg.Default == nil {
+					return fmt.Errorf("required argument '%s' is missing", arg.Name)
+				}
+			}
+		}
+	}
+
+	// Check if all provided arguments are defined (if Arguments is not empty)
+	if len(c.Arguments) > 0 {
+		for name := range args {
+			found := false
+			for _, arg := range c.Arguments {
+				if arg.Name == name {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("unknown argument '%s' provided", name)
+			}
+		}
+	}
+
 	return nil
 }
 
