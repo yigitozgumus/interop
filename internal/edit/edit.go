@@ -2,8 +2,8 @@ package edit
 
 import (
 	"fmt"
+	"interop/internal/logging"
 	"interop/internal/settings"
-	"interop/internal/util"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,7 +14,7 @@ func OpenSettings() error {
 	// Find the settings file path
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		util.Error("failed to get user home directory: %w", err)
+		logging.ErrorAndExit("failed to get user home directory: %w", err)
 	}
 
 	// Build the path to the settings file using the current path configuration
@@ -29,7 +29,7 @@ func OpenSettings() error {
 		editor = "nano" // Simple default that's often available
 	}
 
-	util.Message(fmt.Sprintf("Opening settings file with %s: %s", editor, settingsPath))
+	logging.Message(fmt.Sprintf("Opening settings file with %s: %s", editor, settingsPath))
 
 	// Create the command to open the editor
 	cmd := exec.Command(editor, settingsPath)

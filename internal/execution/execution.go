@@ -2,8 +2,8 @@ package execution
 
 import (
 	"fmt"
+	"interop/internal/logging"
 	"interop/internal/shell"
-	"interop/internal/util"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,7 +29,7 @@ func RunWithSearchPaths(command CommandInfo, executableSearchPaths []string, pro
 		return fmt.Errorf("command '%s' is not enabled", command.Name)
 	}
 
-	util.Message("Command '%s' is enabled, proceeding with execution", command.Name)
+	logging.Message("Command '%s' is enabled, proceeding with execution", command.Name)
 
 	// Store current working directory if we need to change to project directory
 	var currentDir string
@@ -50,16 +50,16 @@ func RunWithSearchPaths(command CommandInfo, executableSearchPaths []string, pro
 		}
 
 		// Change to project directory
-		util.Message("Changing to project directory: %s", projectDir)
+		logging.Message("Changing to project directory: %s", projectDir)
 		if err := os.Chdir(projectDir); err != nil {
 			return fmt.Errorf("failed to change to project directory: %w", err)
 		}
 
 		// Ensure we change back to original directory when done
 		defer func() {
-			util.Message("Changing back to original directory: %s", currentDir)
+			logging.Message("Changing back to original directory: %s", currentDir)
 			if err := os.Chdir(currentDir); err != nil {
-				util.Error("Failed to change back to original directory: %v", err)
+				logging.Error("Failed to change back to original directory: %v", err)
 			}
 		}()
 	}
@@ -72,7 +72,7 @@ func RunWithSearchPaths(command CommandInfo, executableSearchPaths []string, pro
 	// Check if this command should run as a shell alias
 	if shell.IsAliasCommand(command.Cmd) {
 		// Run the alias using the shell package
-		util.Message("Running shell alias: %s", command.Cmd)
+		logging.Message("Running shell alias: %s", command.Cmd)
 		commandToRun = userShell.ExecuteAlias(command.Cmd)
 	} else if command.IsExecutable {
 		// For executable commands, look for the executable in all search paths
@@ -81,12 +81,12 @@ func RunWithSearchPaths(command CommandInfo, executableSearchPaths []string, pro
 			return err
 		}
 
-		util.Message("Found executable '%s', executing", execPath)
+		logging.Message("Found executable '%s', executing", execPath)
 		commandToRun = exec.Command(execPath)
 	} else if shell.IsLocalScriptCommand(command.Cmd) {
 		// Local script that should be executed directly
 		scriptPath, args := shell.ParseLocalScript(command.Cmd)
-		util.Message("Running local script: %s with arguments: %v", scriptPath, args)
+		logging.Message("Running local script: %s with arguments: %v", scriptPath, args)
 
 		var err error
 		commandToRun, err = userShell.ExecuteScript(scriptPath, args...)
@@ -95,7 +95,7 @@ func RunWithSearchPaths(command CommandInfo, executableSearchPaths []string, pro
 		}
 	} else {
 		// Standard shell command
-		util.Message("Running shell command: %s", command.Cmd)
+		logging.Message("Running shell command: %s", command.Cmd)
 		commandToRun = userShell.ExecuteCommand(command.Cmd)
 	}
 

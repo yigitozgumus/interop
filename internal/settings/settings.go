@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"interop/internal/util"
+	"interop/internal/logging"
 	"os"
 	"path/filepath"
 	"strings"
@@ -120,24 +120,24 @@ func SetPathConfig(config PathConfig) {
 func validate() (string, error) {
 	root, e := os.UserHomeDir()
 	if e != nil {
-		util.Error("Failed to get user home directory: " + e.Error())
+		logging.Error("Failed to get user home directory: " + e.Error())
 	}
 	config := filepath.Join(root, pathConfig.SettingsDir)
 	base := filepath.Join(config, pathConfig.AppDir)
 	path := filepath.Join(base, pathConfig.CfgFile)
 
 	if e := os.MkdirAll(base, 0o755); e != nil {
-		util.Error("Can't create the directory for settings: " + e.Error())
+		logging.Error("Can't create the directory for settings: " + e.Error())
 	} else {
-		util.Message("Settings directory is created")
+		logging.Message("Settings directory is created")
 	}
 
 	// Create executables directory with executable permissions
 	execDir := filepath.Join(base, pathConfig.ExecutablesDir)
 	if e := os.MkdirAll(execDir, 0o755); e != nil {
-		util.Error("Can't create the directory for executables: " + e.Error())
+		logging.Error("Can't create the directory for executables: " + e.Error())
 	} else {
-		util.Message("executables directory is created")
+		logging.Message("executables directory is created")
 	}
 
 	if _, e := os.Stat(path); errors.Is(e, os.ErrNotExist) {
@@ -148,13 +148,13 @@ func validate() (string, error) {
 		}
 		f, e := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o644)
 		if e != nil {
-			util.Error("Failed to create settings file: " + e.Error())
+			logging.Error("Failed to create settings file: " + e.Error())
 		}
 		if e := toml.NewEncoder(f).Encode(def); e != nil {
-			util.Error("Failed to encode default settings: " + e.Error())
+			logging.Error("Failed to encode default settings: " + e.Error())
 		}
 		if e := f.Close(); e != nil {
-			util.Error("Failed to close settings file: " + e.Error())
+			logging.Error("Failed to close settings file: " + e.Error())
 		}
 	}
 	return path, nil
@@ -166,20 +166,20 @@ func Load() (*Settings, error) {
 		path, e := validate()
 		if e != nil {
 			err = e
-			util.Error("Failed to validate settings: " + e.Error())
+			logging.Error("Failed to validate settings: " + e.Error())
 		}
 		var c Settings
 		if _, e := toml.DecodeFile(path, &c); e != nil {
 			err = e
-			util.Error("Failed to decode settings file: " + e.Error())
+			logging.Error("Failed to decode settings file: " + e.Error())
 		}
-		util.SetDefaultLogLevel(c.LogLevel)
+		logging.SetDefaultLevelFromString(c.LogLevel)
 
 		if len(c.Projects) > 0 {
 			homeDir, e := os.UserHomeDir()
 			if e != nil {
 				err = e
-				util.Error("Failed to get user home directory: " + e.Error())
+				logging.Error("Failed to get user home directory: " + e.Error())
 			}
 
 			for name, project := range c.Projects {
@@ -195,16 +195,16 @@ func Load() (*Settings, error) {
 
 				if filepath.IsAbs(project.Path) && !filepath.HasPrefix(project.Path, homeDir) {
 					errMsg := fmt.Sprintf("project '%s' path must be inside $HOME: %s", name, project.Path)
-					util.Warning(errMsg)
+					logging.Warning(errMsg)
 					continue
 				}
 
 				if _, e := os.Stat(projectPath); os.IsNotExist(e) {
 					errMsg := fmt.Sprintf("project '%s' path does not exist: %s", name, projectPath)
-					util.Warning(errMsg)
+					logging.Warning(errMsg)
 				}
 			}
-			util.Message("Projects are validated")
+			logging.Message("Projects are validated")
 		}
 
 		cfg = &c
@@ -244,7 +244,7 @@ func GetExecutableSearchPaths(cfg *Settings) ([]string, error) {
 		if strings.HasPrefix(path, "~/") {
 			homeDir, err := os.UserHomeDir()
 			if err != nil {
-				util.Warning("Failed to get home directory for path expansion: %v", err)
+				logging.Warning("Failed to get home directory for path expansion: %v", err)
 				continue
 			}
 			path = filepath.Join(homeDir, path[2:])
@@ -254,7 +254,7 @@ func GetExecutableSearchPaths(cfg *Settings) ([]string, error) {
 		if _, err := os.Stat(path); err == nil {
 			paths = append(paths, path)
 		} else {
-			util.Warning("Executable search path not found: %s", path)
+			logging.Warning("Executable search path not found: %s", path)
 		}
 	}
 
@@ -318,7 +318,7 @@ func GetProjectCommands(cfg *Settings, projectName string) (map[string]CommandCo
 func Get() *Settings {
 	c, e := Load()
 	if e != nil {
-		util.Error("config load: " + e.Error())
+		logging.Error("config load: " + e.Error())
 	}
 	return c
 }

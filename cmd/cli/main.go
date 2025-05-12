@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"interop/internal/command"
 	"interop/internal/edit"
+	"interop/internal/logging"
 	"interop/internal/project"
 	"interop/internal/settings"
-	"interop/internal/util"
 	"interop/internal/validation"
 	"log"
 	"os"
@@ -24,7 +24,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("settings init: %v", err)
 	}
-	util.Message("Config is loaded")
+	logging.Message("Config is loaded")
 
 	rootCmd := &cobra.Command{
 		Use:     "interop",
@@ -90,8 +90,7 @@ func main() {
 			// Validate configuration and run the command
 			err := validation.ExecuteCommand(cfg, commandOrAlias)
 			if err != nil {
-				util.Error("Failed to run '%s': %v", commandOrAlias, err)
-				os.Exit(1)
+				logging.ErrorAndExit("Failed to run '%s': %v", commandOrAlias, err)
 			}
 		},
 	}
@@ -104,8 +103,7 @@ func main() {
 		Run: func(cmd *cobra.Command, args []string) {
 			err := edit.OpenSettings()
 			if err != nil {
-				util.Error(fmt.Sprintf("Failed to open settings file: %v", err))
-				os.Exit(1)
+				logging.ErrorAndExit(fmt.Sprintf("Failed to open settings file: %v", err))
 			}
 		},
 	}

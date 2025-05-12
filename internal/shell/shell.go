@@ -2,7 +2,7 @@ package shell
 
 import (
 	"fmt"
-	"interop/internal/util"
+	"interop/internal/logging"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,7 +37,7 @@ func GetUserShell() Shell {
 	shellPath := os.Getenv("SHELL")
 	if shellPath == "" {
 		// Fallback to sh if SHELL is not defined
-		util.Warning("SHELL environment variable not set, defaulting to /bin/sh")
+		logging.Warning("SHELL environment variable not set, defaulting to /bin/sh")
 		return Shell{
 			Path: "/bin/sh",
 			Type: ShellTypeSh,
@@ -112,7 +112,7 @@ func (s *Shell) ExecuteScript(scriptPath string, args ...string) (*exec.Cmd, err
 
 	// Make sure the file is executable
 	if err := os.Chmod(scriptPath, 0755); err != nil {
-		util.Warning("Failed to set executable permissions on script '%s': %v", scriptPath, err)
+		logging.Warning("Failed to set executable permissions on script '%s': %v", scriptPath, err)
 	}
 
 	// Create the command with arguments

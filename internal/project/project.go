@@ -2,9 +2,9 @@ package project
 
 import (
 	"interop/internal/display"
+	"interop/internal/logging"
 	"interop/internal/path"
 	"interop/internal/settings"
-	"interop/internal/util"
 )
 
 // List prints out all configured projects with their name, path, and validity
@@ -19,14 +19,14 @@ func List(cfg *settings.Settings) {
 	// Using path package directly instead of keeping homeDir
 	_, err := path.HomeDir()
 	if err != nil {
-		util.Warning("Warning: Could not determine home directory")
+		logging.Warning("Warning: Could not determine home directory")
 	}
 
 	for name, project := range cfg.Projects {
 		// Use the path package to validate and expand the path
 		pathInfo, err := path.ExpandAndValidate(project.Path)
 		if err != nil {
-			util.Warning("Failed to expand path for project %s: %v", name, err)
+			logging.Warning("Failed to expand path for project %s: %v", name, err)
 			continue
 		}
 
@@ -63,7 +63,7 @@ func ListWithCommands(cfg *settings.Settings) {
 		// Use the path package to validate and expand the path
 		pathInfo, err := path.ExpandAndValidate(project.Path)
 		if err != nil {
-			util.Warning("Failed to expand path for project %s: %v", name, err)
+			logging.Warning("Failed to expand path for project %s: %v", name, err)
 			continue
 		}
 
@@ -120,7 +120,7 @@ func ListWithCustomHomeDir(cfg *settings.Settings, homeDirFunc func() (string, e
 		// Now use the path package which will use our custom homeDirFunc
 		pathInfo, err := path.ExpandAndValidate(project.Path)
 		if err != nil {
-			util.Warning("Failed to expand path for project %s: %v", name, err)
+			logging.Warning("Failed to expand path for project %s: %v", name, err)
 			continue
 		}
 
