@@ -2,9 +2,12 @@ package validation
 
 import (
 	"fmt"
+	"interop/internal/command/factory"
+	"interop/internal/errors"
 	"interop/internal/execution"
-	pathPkg "interop/internal/path"
 	"interop/internal/settings"
+	"interop/internal/shell"
+	"interop/internal/validation/project"
 )
 
 // CommandType represents the type of a command
@@ -33,23 +36,29 @@ type ValidationError struct {
 // ValidateCommands validates all commands in the settings
 // Returns a list of validation errors
 func ValidateCommands(cfg *settings.Settings) []ValidationError {
-	errors := []ValidationError{}
+	// First validate projects using our new project validator
+	projectValidator := project.NewValidator(cfg)
+	projectResult := projectValidator.ValidateAll()
 
-	// Track command usage to detect conflicts
+	// Convert project validation errors to the old format for backward compatibility
+	errors := []ValidationError{}
+	for _, err := range projectResult.Errors {
+		errors = append(errors, ValidationError{
+			Message: err.Error(),
+			Severe:  err.Severe,
+		})
+	}
+
+	// Track command usage to detect conflicts (maintaining existing functionality)
 	usedCommands := make(map[string]string) // command name -> project name
 	usedAliases := make(map[string]string)  // alias -> project name
 
-	// First check for command uniqueness
-	for projectName, project := range cfg.Projects {
-		for _, aliasConfig := range project.Commands {
-			// Check if command exists
+	// Check for command uniqueness
+	for projectName, projectData := range cfg.Projects {
+		for _, aliasConfig := range projectData.Commands {
+			// Check if command exists - this was already checked in project validator
 			if _, exists := cfg.Commands[aliasConfig.CommandName]; !exists {
-				errors = append(errors, ValidationError{
-					Message: fmt.Sprintf("Project '%s' references non-existent command '%s'",
-						projectName, aliasConfig.CommandName),
-					Severe: true,
-				})
-				continue
+				continue // Skip, already reported
 			}
 
 			// Check if command is bound to multiple projects without alias
@@ -82,36 +91,8 @@ func ValidateCommands(cfg *settings.Settings) []ValidationError {
 // ResolveCommand finds a command by name or alias
 // Returns the command reference and a potential error
 func ResolveCommand(cfg *settings.Settings, nameOrAlias string) (*CommandReference, error) {
-	// First, check if it's a direct command name
-	if cmd, exists := cfg.Commands[nameOrAlias]; exists {
-		// Is this command project-specific?
-		isProjectSpecific := false
-		projectName := ""
-
-		// Check if command is bound to a project
-		for pName, project := range cfg.Projects {
-			for _, aliasConfig := range project.Commands {
-				if aliasConfig.CommandName == nameOrAlias && aliasConfig.Alias == "" {
-					isProjectSpecific = true
-					projectName = pName
-					break
-				}
-			}
-			if isProjectSpecific {
-				break
-			}
-		}
-
-		if isProjectSpecific {
-			return &CommandReference{
-				Type:        ProjectCommand,
-				Command:     cmd,
-				ProjectName: projectName,
-				Name:        nameOrAlias,
-			}, nil
-		}
-
-		// It's a global command
+	// First check if it's a global command
+	if cmd, ok := cfg.Commands[nameOrAlias]; ok {
 		return &CommandReference{
 			Type:    GlobalCommand,
 			Command: cmd,
@@ -119,82 +100,81 @@ func ResolveCommand(cfg *settings.Settings, nameOrAlias string) (*CommandReferen
 		}, nil
 	}
 
-	// Not a direct command, check if it's an alias
-	for projectName, project := range cfg.Projects {
-		for _, aliasConfig := range project.Commands {
-			if aliasConfig.Alias == nameOrAlias {
-				// Found the alias
-				cmd, exists := cfg.Commands[aliasConfig.CommandName]
-				if !exists {
-					return nil, fmt.Errorf("alias '%s' references non-existent command '%s'",
-						nameOrAlias, aliasConfig.CommandName)
+	// Then check if it's a project command or alias
+	for projectName, projectData := range cfg.Projects {
+		for _, alias := range projectData.Commands {
+			// Check if it matches the command name
+			if alias.CommandName == nameOrAlias && alias.Alias == "" {
+				if cmd, ok := cfg.Commands[alias.CommandName]; ok {
+					return &CommandReference{
+						Type:        ProjectCommand,
+						Command:     cmd,
+						ProjectName: projectName,
+						Name:        nameOrAlias,
+					}, nil
 				}
+			}
 
-				return &CommandReference{
-					Type:        AliasCommand,
-					Command:     cmd,
-					ProjectName: projectName,
-					Name:        nameOrAlias,
-				}, nil
+			// Check if it matches an alias
+			if alias.Alias == nameOrAlias {
+				if cmd, ok := cfg.Commands[alias.CommandName]; ok {
+					return &CommandReference{
+						Type:        AliasCommand,
+						Command:     cmd,
+						ProjectName: projectName,
+						Name:        nameOrAlias,
+					}, nil
+				}
 			}
 		}
 	}
 
-	return nil, fmt.Errorf("command or alias '%s' not found", nameOrAlias)
+	return nil, errors.NewCommandError(fmt.Sprintf("Command or alias '%s' not found", nameOrAlias), nil, true)
 }
 
-// ExecuteCommand runs a command by name or alias
+// ExecuteCommand validates the configuration, resolves and executes a command by name or alias
 func ExecuteCommand(cfg *settings.Settings, nameOrAlias string) error {
-	// First, validate all commands
+	// First validate all commands
 	validationErrors := ValidateCommands(cfg)
 	for _, err := range validationErrors {
 		if err.Severe {
-			return fmt.Errorf("configuration error: %s", err.Message)
+			return errors.NewValidationError(fmt.Sprintf("Configuration error: %s", err.Message), nil, true)
 		}
 	}
 
-	// Resolve the command
+	// Resolve the command using existing resolver to maintain compatibility
 	cmdRef, err := ResolveCommand(cfg, nameOrAlias)
 	if err != nil {
 		return err
 	}
 
-	// Get all executable search paths
-	searchPaths, err := settings.GetExecutableSearchPaths(cfg)
+	// Get shell info
+	shellInfo, err := shell.DetectShell()
 	if err != nil {
-		return fmt.Errorf("failed to get executable search paths: %w", err)
+		return errors.NewExecutionError("Failed to detect shell", err)
 	}
 
-	// If it's a project command or alias, we need the project path
-	projectPath := ""
+	// Create a command factory
+	executor := execution.NewExecutor()
+	commandFactory, err := factory.NewFactory(cfg, executor, shellInfo)
+	if err != nil {
+		return errors.NewExecutionError("Failed to create command factory", err)
+	}
+
+	// If it's a project command or alias, we need to create it with the project path
+	var cmd *factory.Command
 	if cmdRef.ProjectName != "" {
-		project, exists := cfg.Projects[cmdRef.ProjectName]
-		if !exists {
-			return fmt.Errorf("project '%s' not found", cmdRef.ProjectName)
-		}
-
-		// Use the path package to get the path
-		pathInfo, err := pathPkg.ExpandAndValidate(project.Path)
-		if err != nil {
-			return fmt.Errorf("failed to resolve project path: %w", err)
-		}
-
-		if !pathInfo.Exists {
-			return fmt.Errorf("project directory doesn't exist: %s", project.Path)
-		}
-
-		projectPath = pathInfo.Absolute
+		// For project commands, use CreateFromAlias
+		cmd, err = commandFactory.CreateFromAlias(cmdRef.ProjectName, nameOrAlias)
+	} else {
+		// For global commands, use Create with empty project path
+		cmd, err = commandFactory.Create(nameOrAlias, "")
 	}
 
-	// Convert CommandConfig to execution.CommandInfo
-	execInfo := execution.CommandInfo{
-		Name:         cmdRef.Name,
-		Description:  cmdRef.Command.Description,
-		IsEnabled:    cmdRef.Command.IsEnabled,
-		Cmd:          cmdRef.Command.Cmd,
-		IsExecutable: cmdRef.Command.IsExecutable,
+	if err != nil {
+		return err
 	}
 
-	// Run the command using the execution package
-	return execution.RunWithSearchPaths(execInfo, searchPaths, projectPath)
+	// Execute the command
+	return cmd.Run()
 }

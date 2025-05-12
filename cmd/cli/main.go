@@ -5,9 +5,10 @@ import (
 	"interop/internal/command"
 	"interop/internal/edit"
 	"interop/internal/logging"
-	"interop/internal/project"
+	projectPkg "interop/internal/project"
 	"interop/internal/settings"
 	"interop/internal/validation"
+	"interop/internal/validation/project"
 	"log"
 	"os"
 
@@ -40,7 +41,7 @@ func main() {
 		Use:   "projects",
 		Short: "List all configured projects with their commands",
 		Run: func(cmd *cobra.Command, args []string) {
-			project.ListWithCommands(cfg)
+			projectPkg.ListWithCommands(cfg)
 		},
 	}
 	rootCmd.AddCommand(projectsCmd)
@@ -115,8 +116,34 @@ func main() {
 		Use:   "validate",
 		Short: "Validate the configuration file",
 		Run: func(cmd *cobra.Command, args []string) {
-			errors := validation.ValidateCommands(cfg)
-			if len(errors) == 0 {
+			// Validate commands using existing functionality
+			cmdErrors := validation.ValidateCommands(cfg)
+
+			// Validate projects using the new project validator
+			projectValidator := project.NewValidator(cfg)
+			projectResult := projectValidator.ValidateAll()
+
+			// Combine errors from both validations
+			allErrors := cmdErrors
+			for _, err := range projectResult.Errors {
+				// Skip project errors that are already reported by command validation
+				isDuplicate := false
+				for _, cmdErr := range cmdErrors {
+					if cmdErr.Message == err.Error() {
+						isDuplicate = true
+						break
+					}
+				}
+
+				if !isDuplicate {
+					allErrors = append(allErrors, validation.ValidationError{
+						Message: err.Error(),
+						Severe:  err.Severe,
+					})
+				}
+			}
+
+			if len(allErrors) == 0 {
 				fmt.Println("✅ Configuration is valid!")
 				return
 			}
@@ -126,7 +153,7 @@ func main() {
 			fmt.Println()
 
 			severe := false
-			for _, err := range errors {
+			for _, err := range allErrors {
 				severity := "Warning"
 				if err.Severe {
 					severity = "Error"

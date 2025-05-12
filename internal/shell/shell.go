@@ -2,10 +2,12 @@ package shell
 
 import (
 	"fmt"
+	"interop/internal/errors"
 	"interop/internal/logging"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -29,6 +31,80 @@ const (
 type Shell struct {
 	Path string    // Path to the shell executable
 	Type ShellType // Type of shell
+}
+
+// Info contains information about the detected shell
+type Info struct {
+	Path   string // Full path to the shell
+	Name   string // Shell name
+	Option string // Shell option for executing commands (e.g., -c)
+}
+
+// Detector handles shell detection
+type Detector struct{}
+
+// NewDetector creates a new shell detector
+func NewDetector() *Detector {
+	return &Detector{}
+}
+
+// Detect detects the current shell
+func (d *Detector) Detect() (*Info, error) {
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		// Default shell based on platform
+		if runtime.GOOS == "windows" {
+			if cmdPath, err := exec.LookPath("cmd.exe"); err == nil {
+				return &Info{
+					Path:   cmdPath,
+					Name:   "cmd",
+					Option: "/C",
+				}, nil
+			}
+			return nil, errors.NewExecutionError("Failed to locate cmd.exe", nil)
+		}
+
+		// Default to /bin/sh on Unix systems
+		return &Info{
+			Path:   "/bin/sh",
+			Name:   "sh",
+			Option: "-c",
+		}, nil
+	}
+
+	// Get shell name from path
+	name := filepath.Base(shell)
+
+	// Determine appropriate shell option
+	option := "-c" // Default for most shells
+
+	// Specific handling for windows shells
+	if runtime.GOOS == "windows" {
+		switch strings.ToLower(name) {
+		case "cmd.exe", "cmd":
+			option = "/C"
+		case "powershell.exe", "powershell":
+			option = "-Command"
+		}
+	}
+
+	return &Info{
+		Path:   shell,
+		Name:   name,
+		Option: option,
+	}, nil
+}
+
+// IsWindows checks if the current shell is a Windows shell
+func (i *Info) IsWindows() bool {
+	name := strings.ToLower(i.Name)
+	return name == "cmd.exe" || name == "cmd" ||
+		name == "powershell.exe" || name == "powershell"
+}
+
+// DetectShell is a convenience function to detect the current shell
+func DetectShell() (*Info, error) {
+	return NewDetector().Detect()
 }
 
 // GetUserShell returns the user's shell executable path and type

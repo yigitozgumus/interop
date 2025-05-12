@@ -1,12 +1,16 @@
 package execution
 
 import (
+	"context"
 	"fmt"
+	"interop/internal/errors"
 	"interop/internal/logging"
 	"interop/internal/shell"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
 // CommandInfo defines a command that can be executed
@@ -16,6 +20,33 @@ type CommandInfo struct {
 	IsEnabled    bool
 	Cmd          string
 	IsExecutable bool
+}
+
+// Command represents a command to be executed
+type Command struct {
+	Path string   // Path to the executable
+	Args []string // Command arguments
+	Dir  string   // Working directory
+	Env  []string // Environment variables
+}
+
+// Executor handles command execution
+type Executor struct {
+	Timeout time.Duration // Command timeout (0 means no timeout)
+}
+
+// NewExecutor creates a new command executor with default settings
+func NewExecutor() *Executor {
+	return &Executor{
+		Timeout: 0, // No timeout by default
+	}
+}
+
+// WithTimeout creates an executor with the specified timeout
+func WithTimeout(timeout time.Duration) *Executor {
+	return &Executor{
+		Timeout: timeout,
+	}
 }
 
 // Run executes a command by name
@@ -129,4 +160,60 @@ func FindExecutable(executableName string, searchPaths []string) (string, error)
 	}
 
 	return execPath, nil
+}
+
+// Execute runs the command and returns an error if it fails
+func (e *Executor) Execute(cmd *Command) error {
+	return e.ExecuteWithContext(context.Background(), cmd)
+}
+
+// ExecuteWithContext runs the command with the provided context
+func (e *Executor) ExecuteWithContext(ctx context.Context, cmd *Command) error {
+	logging.Message("Executing command: %s %s", cmd.Path, strings.Join(cmd.Args, " "))
+
+	// Create the command with context
+	execCmd := exec.CommandContext(ctx, cmd.Path, cmd.Args...)
+
+	// Set working directory if specified
+	if cmd.Dir != "" {
+		execCmd.Dir = cmd.Dir
+	}
+
+	// Set environment variables if provided
+	if len(cmd.Env) > 0 {
+		execCmd.Env = append(os.Environ(), cmd.Env...)
+	} else {
+		execCmd.Env = os.Environ()
+	}
+
+	// Connect command to standard I/O
+	execCmd.Stdin = os.Stdin
+	execCmd.Stdout = os.Stdout
+	execCmd.Stderr = os.Stderr
+
+	// Create a context with timeout if specified
+	var cancel context.CancelFunc
+	if e.Timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, e.Timeout)
+		defer cancel()
+	}
+
+	// Run the command
+	err := execCmd.Run()
+	if err != nil {
+		return errors.NewExecutionError(fmt.Sprintf("Command execution failed: %s", strings.Join(cmd.Args, " ")), err)
+	}
+
+	return nil
+}
+
+// RunInDirectory executes a command in the specified directory
+func RunInDirectory(dir string, command string, args ...string) error {
+	cmd := &Command{
+		Path: command,
+		Args: args,
+		Dir:  dir,
+	}
+
+	return NewExecutor().Execute(cmd)
 }
