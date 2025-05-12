@@ -171,9 +171,15 @@ func Run(commands map[string]Command, commandName string, executablesPath string
 			return fmt.Errorf("failed to get current working directory: %w", err)
 		}
 
+		projectDir := projectPath[0]
+		// If path doesn't exist, try to report a more helpful error
+		if _, err := os.Stat(projectDir); os.IsNotExist(err) {
+			return fmt.Errorf("project directory doesn't exist: %s", projectDir)
+		}
+
 		// Change to project directory
-		util.Message("Changing to project directory: %s", projectPath[0])
-		if err := os.Chdir(projectPath[0]); err != nil {
+		util.Message("Changing to project directory: %s", projectDir)
+		if err := os.Chdir(projectDir); err != nil {
 			return fmt.Errorf("failed to change to project directory: %w", err)
 		}
 
@@ -202,6 +208,34 @@ func Run(commands map[string]Command, commandName string, executablesPath string
 
 		util.Message("Found executable '%s', executing", cmd.Cmd)
 		command = exec.Command(execPath)
+	} else if strings.HasPrefix(cmd.Cmd, "./") {
+		// Special handling for shell scripts that start with ./
+		// Split the command into the script path and arguments
+		parts := strings.Fields(cmd.Cmd)
+		if len(parts) == 0 {
+			return fmt.Errorf("invalid command: empty command")
+		}
+
+		scriptPath := parts[0][2:] // Remove the ./ prefix
+
+		// Check if the script exists
+		if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+			return fmt.Errorf("script '%s' not found in current directory", scriptPath)
+		}
+
+		// Make sure the file is executable
+		if err := os.Chmod(scriptPath, 0755); err != nil {
+			util.Warning("Failed to set executable permissions on script '%s': %v", scriptPath, err)
+		}
+
+		// Create the command with arguments
+		if len(parts) > 1 {
+			util.Message("Executing script: %s with arguments: %v", scriptPath, parts[1:])
+			command = exec.Command("./"+scriptPath, parts[1:]...)
+		} else {
+			util.Message("Executing script: %s", scriptPath)
+			command = exec.Command("./" + scriptPath)
+		}
 	} else {
 		// For regular commands, execute them with the shell
 		command = exec.Command("sh", "-c", cmd.Cmd)

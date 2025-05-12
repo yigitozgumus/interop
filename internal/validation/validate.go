@@ -203,13 +203,19 @@ func ExecuteCommand(cfg *settings.Settings, nameOrAlias string) error {
 		if err != nil {
 			return err
 		}
+
 		projectPath = resolvedPath
+	}
+
+	// Create a new map with just the command we want to run
+	commandToRun := map[string]command.Command{
+		cmdRef.Name: cmdRef.Command,
 	}
 
 	// Run the command
 	if projectPath != "" {
-		return command.Run(map[string]command.Command{cmdRef.Name: cmdRef.Command}, cmdRef.Name, executablesPath, projectPath)
+		return command.Run(commandToRun, cmdRef.Name, executablesPath, projectPath)
 	}
 
-	return command.Run(map[string]command.Command{cmdRef.Name: cmdRef.Command}, cmdRef.Name, executablesPath)
+	return command.Run(commandToRun, cmdRef.Name, executablesPath)
 }
