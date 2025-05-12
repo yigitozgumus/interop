@@ -77,7 +77,7 @@ func (s *Server) Start() error {
 	}
 
 	logging.Message("MCP server started with PID %d", pid)
-	logging.Message("HTTP server available at http://localhost:4567")
+	logging.Message("HTTP server available at http://localhost:8080")
 	return nil
 }
 
@@ -155,7 +155,7 @@ func (s *Server) IsRunning() bool {
 func (s *Server) Status() string {
 	if s.IsRunning() {
 		pid, _ := s.getPid()
-		return fmt.Sprintf("MCP server is running (PID: %d)\nHTTP server available at http://localhost:4567", pid)
+		return fmt.Sprintf("MCP server is running (PID: %d)\nHTTP server available at http://localhost:8080", pid)
 	}
 	return "MCP server is not running"
 }

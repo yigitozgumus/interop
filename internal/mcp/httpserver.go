@@ -73,7 +73,7 @@ func NewMCPServer() (*MCPServer, error) {
 	}
 
 	server := &MCPServer{
-		Port:     4567,
+		Port:     8080,
 		DataDir:  dataDir,
 		Commands: cfg.Commands,
 		handlers: make(map[string]http.HandlerFunc),

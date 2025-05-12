@@ -25,7 +25,7 @@ type SSEHandler func(event string, data string)
 // NewToolsClient creates a new client for the MCP server
 func NewToolsClient() *ToolsClient {
 	return &ToolsClient{
-		BaseURL: "http://localhost:4567",
+		BaseURL: "http://localhost:8080",
 		Client: &http.Client{
 			Timeout: 30 * time.Second,
 		},

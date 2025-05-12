@@ -104,7 +104,7 @@ func NewMCPLibServer() (*MCPLibServer, error) {
 	}
 
 	// Set up the port
-	port := 4567
+	port := 8080
 
 	// Create MCP server with logging disabled
 	mcpServer := server.NewMCPServer(
