@@ -45,21 +45,28 @@ func main() {
 	}
 	rootCmd.AddCommand(projectsCmd)
 
-	commandCmd := &cobra.Command{
-		Use:   "command",
-		Short: "Command related operations",
-		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
-		},
-	}
-
-	commandListCmd := &cobra.Command{
-		Use:   "list",
+	// Commands command that lists all commands
+	commandsCmd := &cobra.Command{
+		Use:   "commands",
 		Short: "List all configured commands",
 		Run: func(cmd *cobra.Command, args []string) {
-			command.List(cfg.Commands)
+			// Convert project commands to the format expected by ListWithProjects
+			projectCommands := make(map[string][]command.Alias)
+			for projectName, project := range cfg.Projects {
+				aliases := make([]command.Alias, len(project.Commands))
+				for i, a := range project.Commands {
+					aliases[i] = command.Alias{
+						CommandName: a.CommandName,
+						Alias:       a.Alias,
+					}
+				}
+				projectCommands[projectName] = aliases
+			}
+
+			command.ListWithProjects(cfg.Commands, projectCommands)
 		},
 	}
+	rootCmd.AddCommand(commandsCmd)
 
 	// New run command that supports both command names and aliases
 	runCmd := &cobra.Command{
@@ -78,8 +85,6 @@ func main() {
 		},
 	}
 
-	commandCmd.AddCommand(commandListCmd)
-	rootCmd.AddCommand(commandCmd)
 	rootCmd.AddCommand(runCmd) // Add run as a top-level command for easier access
 
 	editCmd := &cobra.Command{

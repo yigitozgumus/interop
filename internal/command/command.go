@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // Command defines a command that can be executed
@@ -14,6 +15,12 @@ type Command struct {
 	IsEnabled    bool   `toml:"is_enabled"`
 	Cmd          string `toml:"cmd"`
 	IsExecutable bool   `toml:"is_executable"`
+}
+
+// Alias represents a command alias in a project
+type Alias struct {
+	CommandName string
+	Alias       string
 }
 
 // NewCommand creates a new Command with default values
@@ -52,7 +59,7 @@ func (c *Command) UnmarshalTOML(data interface{}) error {
 }
 
 // PrintCommandDetails prints detailed information about a single command
-func PrintCommandDetails(name string, cmd Command) {
+func PrintCommandDetails(name string, cmd Command, projectAssociations map[string][]string) {
 	// Print command name
 	fmt.Printf("⚡ Name: %s\n", name)
 
@@ -68,6 +75,16 @@ func PrintCommandDetails(name string, cmd Command) {
 	}
 
 	fmt.Printf("   Status: Enabled: %s  |  Source: %s\n", statusEnabled, execSource)
+
+	// Print project associations if any
+	projectNames, hasProjects := projectAssociations[name]
+	if hasProjects && len(projectNames) > 0 {
+		if len(projectNames) == 1 {
+			fmt.Printf("   Project: %s\n", projectNames[0])
+		} else {
+			fmt.Printf("   Projects: %s\n", strings.Join(projectNames, ", "))
+		}
+	}
 
 	// Print description if exists
 	if cmd.Description != "" {
@@ -90,7 +107,42 @@ func List(commands map[string]Command) {
 	fmt.Println()
 
 	for name, cmd := range commands {
-		PrintCommandDetails(name, cmd)
+		PrintCommandDetails(name, cmd, nil)
+	}
+}
+
+// ListWithProjects prints all commands with their project associations
+func ListWithProjects(commands map[string]Command, projectCommands map[string][]Alias) {
+	if len(commands) == 0 {
+		fmt.Println("No commands found.")
+		return
+	}
+
+	fmt.Println("COMMANDS:")
+	fmt.Println("=========")
+	fmt.Println()
+
+	// Build a map of command name to associated projects
+	commandProjects := make(map[string][]string)
+
+	// For each project
+	for projectName, aliases := range projectCommands {
+		// For each command in project
+		for _, aliasConfig := range aliases {
+			// Add to the map
+			commandProjects[aliasConfig.CommandName] = append(
+				commandProjects[aliasConfig.CommandName],
+				projectName+(func() string {
+					if aliasConfig.Alias != "" {
+						return " (alias: " + aliasConfig.Alias + ")"
+					}
+					return ""
+				})())
+		}
+	}
+
+	for name, cmd := range commands {
+		PrintCommandDetails(name, cmd, commandProjects)
 	}
 }
 

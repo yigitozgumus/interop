@@ -66,7 +66,7 @@ To list all configured projects:
 interop projects
 ```
 
-This will show a beautifully formatted list of your projects:
+This will show a beautifully formatted list of your projects with their associated commands:
 
 ```
 PROJECTS:
@@ -76,6 +76,11 @@ PROJECTS:
    Path: ~/projects/my-project
    Status: Valid: ✓  |  In $HOME: ✓
    Description: My awesome project
+   Commands:
+      ⚡ build
+         Build the project
+      ⚡ deploy (alias: dep)
+         Deploy the project
 
 📁 Name: another-project
    Path: /opt/projects/another
@@ -88,6 +93,7 @@ The output includes:
 - Path validity status (✓ or ✗)
 - Whether the path is within the home directory (✓ or ✗)
 - Project descriptions (if provided)
+- Commands associated with the project and their aliases
 
 ### List Commands
 
@@ -105,28 +111,57 @@ COMMANDS:
 
 ⚡ Name: build
    Status: Enabled: ✓  |  Source: Script
-   Projects: [my-project]
    Description: Build the project
 
 ⚡ Name: deploy
    Status: Enabled: ✓  |  Source: Executables
-   Projects: [my-project]
    Description: Deploy the project
 ```
 
 ### Execute Commands
 
-To execute a configured command:
+To execute a command or alias:
 
 ```bash
-interop command run <command-name>
+interop run <command-or-alias>
 ```
 
+The system will:
+1. Validate the command configuration 
+2. Resolve the command or alias to determine its type
+3. For project-specific commands, change to the project directory before execution
+4. Execute the command and return to the original directory when done
+
 Commands can be:
+- Global commands (not tied to specific projects)
+- Project-specific commands (tied to one project)
+- Commands with aliases for project-specific usage
 - Regular shell commands (executed via shell)
 - Executable files (from the executables directory)
-- Associated with specific projects
 - Enabled/disabled as needed
+
+### Validate Configuration
+
+To check your configuration for errors:
+
+```bash
+interop validate
+```
+
+This will validate that:
+- All command references in projects exist
+- No command is bound to multiple projects without an alias
+- Aliases are unique across projects
+
+### Edit Configuration
+
+To edit the configuration file:
+
+```bash
+interop edit
+```
+
+This will open the configuration file in your default editor.
 
 ### Log Levels
 

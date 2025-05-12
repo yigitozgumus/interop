@@ -31,7 +31,7 @@ func TestPrintCommandDetails(t *testing.T) {
 	}
 
 	// This should not panic
-	PrintCommandDetails("test-command", cmd)
+	PrintCommandDetails("test-command", cmd, nil)
 }
 
 func TestList(t *testing.T) {
