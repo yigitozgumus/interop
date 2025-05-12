@@ -50,6 +50,17 @@ func main() {
 		Use:   "commands",
 		Short: "List all configured commands",
 		Run: func(cmd *cobra.Command, args []string) {
+			// Convert cfg.Commands to the expected format for command.ListWithProjects
+			commands := make(map[string]command.Command)
+			for name, cmdCfg := range cfg.Commands {
+				commands[name] = command.Command{
+					Description:  cmdCfg.Description,
+					IsEnabled:    cmdCfg.IsEnabled,
+					Cmd:          cmdCfg.Cmd,
+					IsExecutable: cmdCfg.IsExecutable,
+				}
+			}
+
 			// Convert project commands to the format expected by ListWithProjects
 			projectCommands := make(map[string][]command.Alias)
 			for projectName, project := range cfg.Projects {
@@ -63,7 +74,7 @@ func main() {
 				projectCommands[projectName] = aliases
 			}
 
-			command.ListWithProjects(cfg.Commands, projectCommands)
+			command.ListWithProjects(commands, projectCommands)
 		},
 	}
 	rootCmd.AddCommand(commandsCmd)

@@ -148,6 +148,11 @@ func ListWithProjects(commands map[string]Command, projectCommands map[string][]
 
 // Run executes a command by name
 func Run(commands map[string]Command, commandName string, executablesPath string, projectPath ...string) error {
+	return RunWithSearchPaths(commands, commandName, []string{executablesPath}, projectPath...)
+}
+
+// RunWithSearchPaths executes a command by name, searching for executables in multiple paths
+func RunWithSearchPaths(commands map[string]Command, commandName string, executableSearchPaths []string, projectPath ...string) error {
 	cmd, exists := commands[commandName]
 	if !exists {
 		return fmt.Errorf("command '%s' not found", commandName)
@@ -195,19 +200,48 @@ func Run(commands map[string]Command, commandName string, executablesPath string
 	var command *exec.Cmd
 
 	if cmd.IsExecutable {
-		// For executable commands, look for the executable in the executables directory
-		execPath := filepath.Join(executablesPath, cmd.Cmd)
-		if _, err := os.Stat(execPath); os.IsNotExist(err) {
-			return fmt.Errorf("executable '%s' not found in executables directory", cmd.Cmd)
+		// For executable commands, look for the executable in all search paths
+		execFound := false
+		var execPath string
+		var execErr error
+
+		for _, searchPath := range executableSearchPaths {
+			candidatePath := filepath.Join(searchPath, cmd.Cmd)
+			if _, err := os.Stat(candidatePath); err == nil {
+				// Found the executable
+				execPath = candidatePath
+				execFound = true
+
+				// Make sure the file is executable
+				if err := os.Chmod(execPath, 0755); err != nil {
+					execErr = fmt.Errorf("failed to set executable permissions: %w", err)
+					continue
+				}
+
+				util.Message("Found executable '%s' in %s, executing", cmd.Cmd, searchPath)
+				command = exec.Command(execPath)
+				break
+			}
 		}
 
-		// Make sure the file is executable
-		if err := os.Chmod(execPath, 0755); err != nil {
-			return fmt.Errorf("failed to set executable permissions: %w", err)
+		// Check the PATH environment if not found in search paths
+		if !execFound {
+			// Try to find the executable in the system PATH
+			if lookPath, err := exec.LookPath(cmd.Cmd); err == nil {
+				execPath = lookPath
+				execFound = true
+
+				util.Message("Found executable '%s' in system PATH: %s", cmd.Cmd, execPath)
+				command = exec.Command(execPath)
+			}
 		}
 
-		util.Message("Found executable '%s', executing", cmd.Cmd)
-		command = exec.Command(execPath)
+		if !execFound {
+			if execErr != nil {
+				return execErr
+			}
+			return fmt.Errorf("executable '%s' not found in any of the search paths", cmd.Cmd)
+		}
 	} else if strings.HasPrefix(cmd.Cmd, "./") {
 		// Special handling for shell scripts that start with ./
 		// Split the command into the script path and arguments
@@ -237,8 +271,29 @@ func Run(commands map[string]Command, commandName string, executablesPath string
 			command = exec.Command("./" + scriptPath)
 		}
 	} else {
-		// For regular commands, execute them with the shell
-		command = exec.Command("sh", "-c", cmd.Cmd)
+		// For regular commands, try to use the user's shell
+		userShell := os.Getenv("SHELL")
+		if userShell == "" {
+			// Fallback to sh if SHELL is not defined
+			userShell = "/bin/sh"
+			util.Warning("SHELL environment variable not set, defaulting to /bin/sh")
+		}
+
+		// Get the shell name (basename)
+		shellName := filepath.Base(userShell)
+
+		util.Message("Executing command with shell: %s", shellName)
+
+		// Different shells need different flags to execute commands
+		switch shellName {
+		case "fish":
+			command = exec.Command(userShell, "-c", cmd.Cmd)
+		case "zsh", "bash", "sh":
+			command = exec.Command(userShell, "-c", cmd.Cmd)
+		default:
+			// For unknown shells, try with -c which is most common
+			command = exec.Command(userShell, "-c", cmd.Cmd)
+		}
 	}
 
 	command.Stdout = os.Stdout

@@ -21,7 +21,7 @@ const (
 // CommandReference contains the resolved command and its context
 type CommandReference struct {
 	Type        CommandType
-	Command     command.Command
+	Command     settings.CommandConfig
 	ProjectName string // Empty for global commands
 	Name        string // Original command name or alias
 }
@@ -184,10 +184,10 @@ func ExecuteCommand(cfg *settings.Settings, nameOrAlias string) error {
 		return err
 	}
 
-	// Get executables path
-	executablesPath, err := settings.GetExecutablesPath()
+	// Get all executable search paths
+	searchPaths, err := settings.GetExecutableSearchPaths(cfg)
 	if err != nil {
-		return fmt.Errorf("failed to get executables path: %w", err)
+		return fmt.Errorf("failed to get executable search paths: %w", err)
 	}
 
 	// If it's a project command or alias, we need the project path
@@ -207,15 +207,23 @@ func ExecuteCommand(cfg *settings.Settings, nameOrAlias string) error {
 		projectPath = resolvedPath
 	}
 
+	// Convert the settings.CommandConfig to command.Command
+	cmdToRun := command.Command{
+		Description:  cmdRef.Command.Description,
+		IsEnabled:    cmdRef.Command.IsEnabled,
+		Cmd:          cmdRef.Command.Cmd,
+		IsExecutable: cmdRef.Command.IsExecutable,
+	}
+
 	// Create a new map with just the command we want to run
 	commandToRun := map[string]command.Command{
-		cmdRef.Name: cmdRef.Command,
+		cmdRef.Name: cmdToRun,
 	}
 
-	// Run the command
+	// Run the command with all search paths
 	if projectPath != "" {
-		return command.Run(commandToRun, cmdRef.Name, executablesPath, projectPath)
+		return command.RunWithSearchPaths(commandToRun, cmdRef.Name, searchPaths, projectPath)
 	}
 
-	return command.Run(commandToRun, cmdRef.Name, executablesPath)
+	return command.RunWithSearchPaths(commandToRun, cmdRef.Name, searchPaths)
 }

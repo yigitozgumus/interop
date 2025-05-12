@@ -35,10 +35,17 @@ Example configuration:
 ```toml
 log_level = "warning"
 
+# Additional paths to search for executables
+executable_search_paths = ["~/.local/bin", "~/bin"]
+
 [projects]
 [projects.my-project]
 path = "~/projects/my-project"
 description = "My awesome project"
+commands = [
+  {command_name = "build", alias = "b"},
+  {command_name = "deploy"}
+]
 
 [commands]
 [commands.build]
@@ -46,14 +53,12 @@ cmd = "go build ./..."
 description = "Build the project"
 is_enabled = true
 is_executable = false
-projects = ["my-project"]
 
 [commands.deploy]
 cmd = "deploy.sh"
 description = "Deploy the project"
 is_enabled = true
 is_executable = true
-projects = ["my-project"]
 ```
 
 ## Usage
@@ -139,6 +144,47 @@ Commands can be:
 - Regular shell commands (executed via shell)
 - Executable files (from the executables directory)
 - Enabled/disabled as needed
+
+### Command Types and Execution
+
+Interop supports several ways to specify and execute commands:
+
+1. **Shell Commands**: Regular commands executed via the user's shell (specified by the `SHELL` environment variable).
+   ```toml
+   [commands.list]
+   cmd = "ls -la"
+   ```
+
+2. **Local Script Commands**: Scripts that start with `./` are executed directly from the project directory.
+   ```toml
+   [commands.build]
+   cmd = "./gradlew :app:assembleDebug"
+   ```
+
+3. **Executable Commands**: Executables are searched for in multiple locations when `is_executable = true`:
+   ```toml
+   [commands.deploy]
+   cmd = "deploy.sh"
+   is_executable = true
+   ```
+   
+   The search order is:
+   - Interop's executables directory (`~/.config/interop/executables/`)
+   - Additional paths specified in configuration (`executable_search_paths`)
+   - System PATH
+
+### Executable Search Paths
+
+You can specify additional directories to search for executables:
+
+```toml
+executable_search_paths = ["~/.local/bin", "~/bin"]
+```
+
+This is useful for:
+- Custom scripts in your home directory
+- Local development tools
+- System-wide executables not in standard PATH
 
 ### Validate Configuration
 

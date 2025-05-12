@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"interop/internal/command"
 	"interop/internal/util"
 	"os"
 	"path/filepath"
@@ -25,10 +24,19 @@ type Project struct {
 	Commands    []Alias `toml:"commands,omitempty"`
 }
 
+// CommandConfig represents a command that can be executed
+type CommandConfig struct {
+	Description  string `toml:"description,omitempty"`
+	IsEnabled    bool   `toml:"is_enabled"`
+	Cmd          string `toml:"cmd"`
+	IsExecutable bool   `toml:"is_executable"`
+}
+
 type Settings struct {
-	LogLevel string                     `toml:"log_level"`
-	Projects map[string]Project         `toml:"projects"`
-	Commands map[string]command.Command `toml:"commands"`
+	LogLevel              string                   `toml:"log_level"`
+	Projects              map[string]Project       `toml:"projects"`
+	Commands              map[string]CommandConfig `toml:"commands"`
+	ExecutableSearchPaths []string                 `toml:"executable_search_paths"`
 }
 
 // PathConfig defines the directory structure for settings
@@ -93,7 +101,7 @@ func validate() (string, error) {
 		def := Settings{
 			LogLevel: "warning",
 			Projects: map[string]Project{},
-			Commands: map[string]command.Command{},
+			Commands: map[string]CommandConfig{},
 		}
 		f, e := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o644)
 		if e != nil {
@@ -176,6 +184,40 @@ func GetExecutablesPath() (string, error) {
 	), nil
 }
 
+// GetExecutableSearchPaths returns all paths to search for executables
+// This includes the default executables path and any additional paths from config
+func GetExecutableSearchPaths(cfg *Settings) ([]string, error) {
+	// Start with the default executables path
+	defaultPath, err := GetExecutablesPath()
+	if err != nil {
+		return nil, err
+	}
+
+	paths := []string{defaultPath}
+
+	// Add user-configured paths
+	for _, path := range cfg.ExecutableSearchPaths {
+		// Handle tilde expansion for home directory
+		if strings.HasPrefix(path, "~/") {
+			homeDir, err := os.UserHomeDir()
+			if err != nil {
+				util.Warning("Failed to get home directory for path expansion: %v", err)
+				continue
+			}
+			path = filepath.Join(homeDir, path[2:])
+		}
+
+		// Add the path if it exists
+		if _, err := os.Stat(path); err == nil {
+			paths = append(paths, path)
+		} else {
+			util.Warning("Executable search path not found: %s", path)
+		}
+	}
+
+	return paths, nil
+}
+
 // ParseStringSlice parses a TOML value into a string slice
 func ParseStringSlice(value interface{}) []string {
 	if value == nil {
@@ -200,13 +242,13 @@ func ParseStringSlice(value interface{}) []string {
 }
 
 // GetProjectCommands returns the list of commands associated with a project
-func GetProjectCommands(cfg *Settings, projectName string) (map[string]command.Command, error) {
+func GetProjectCommands(cfg *Settings, projectName string) (map[string]CommandConfig, error) {
 	project, exists := cfg.Projects[projectName]
 	if !exists {
 		return nil, fmt.Errorf("project '%s' not found", projectName)
 	}
 
-	result := make(map[string]command.Command)
+	result := make(map[string]CommandConfig)
 
 	// If no commands are defined for the project, return empty map
 	if len(project.Commands) == 0 {
