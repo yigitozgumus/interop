@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/BurntSushi/toml"
 	"interop/internal/command"
 	"interop/internal/util"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+
+	"github.com/BurntSushi/toml"
 )
 
 type Alias struct {
@@ -130,13 +132,22 @@ func Load() (*Settings, error) {
 			}
 
 			for name, project := range c.Projects {
+				// Handle path with tilde expansion
+				projectPath := project.Path
+
+				// Handle tilde expansion for home directory
+				if strings.HasPrefix(projectPath, "~/") && homeDir != "" {
+					projectPath = filepath.Join(homeDir, projectPath[2:])
+				} else if !filepath.IsAbs(projectPath) {
+					projectPath = filepath.Join(homeDir, projectPath)
+				}
+
 				if filepath.IsAbs(project.Path) && !filepath.HasPrefix(project.Path, homeDir) {
 					errMsg := fmt.Sprintf("project '%s' path must be inside $HOME: %s", name, project.Path)
 					util.Warning(errMsg)
 					continue
 				}
 
-				projectPath := filepath.Join(homeDir, project.Path)
 				if _, e := os.Stat(projectPath); os.IsNotExist(e) {
 					errMsg := fmt.Sprintf("project '%s' path does not exist: %s", name, projectPath)
 					util.Warning(errMsg)
