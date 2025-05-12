@@ -11,6 +11,7 @@ A Go command-line interface application for managing and organizing your project
 - Cross-platform support (Linux, Windows, macOS)
 - Beautiful and readable project listing
 - Custom command execution with project association
+- MCP (Model Context Protocol) server integration for AI assistant support
 
 ## Installation
 
@@ -179,6 +180,32 @@ Interop supports several ways to specify and execute commands:
    - Additional paths specified in configuration (`executable_search_paths`)
    - System PATH
 
+### MCP Server Integration
+
+Interop includes a built-in MCP (Model Context Protocol) server for integration with AI assistants:
+
+```bash
+# Start the MCP server
+interop mcp start
+
+# Check the status of the MCP server
+interop mcp status
+
+# Stop the MCP server
+interop mcp stop
+
+# Restart the MCP server
+interop mcp restart
+```
+
+The MCP server exposes your commands as tools that can be invoked by AI assistants supporting the Model Context Protocol. This allows AI assistants to:
+
+- List and execute your configured commands
+- Access project information
+- Run commands in the context of specific projects
+
+For Claude and other MCP-compatible AI assistants, the server automatically configures itself to ensure compatibility by disabling color output when needed.
+
 ### Executable Search Paths
 
 You can specify additional directories to search for executables:
@@ -222,6 +249,10 @@ The following log levels are supported:
 - `warning`: Shows errors and warnings
 - `verbose`: Shows all messages
 
+The output is colorized for better readability in terminals, but colors are automatically disabled when:
+- Output is not directed to a terminal
+- Integration with programmatic tools like MCP server requires plain text
+
 ## Project Structure
 
 ```
@@ -230,7 +261,10 @@ The following log levels are supported:
 │   └── cli/          # Main application entry point
 ├── internal/
 │   ├── command/      # CLI command implementations
+│   ├── display/      # Output formatting utilities
 │   ├── edit/         # Project editing functionality
+│   ├── logging/      # Logging with color control
+│   ├── mcp/          # MCP server implementation
 │   ├── project/      # Project management core
 │   ├── settings/     # Configuration management
 │   └── util/         # Shared utilities
