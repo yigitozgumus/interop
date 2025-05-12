@@ -199,7 +199,35 @@ func RunWithSearchPaths(commands map[string]Command, commandName string, executa
 
 	var command *exec.Cmd
 
-	if cmd.IsExecutable {
+	// Get user's shell
+	userShell := os.Getenv("SHELL")
+	if userShell == "" {
+		// Fallback to sh if SHELL is not defined
+		userShell = "/bin/sh"
+		util.Warning("SHELL environment variable not set, defaulting to /bin/sh")
+	}
+
+	// Get the shell name (basename)
+	shellName := filepath.Base(userShell)
+
+	// Check if this command should run as a shell alias
+	if strings.HasPrefix(cmd.Cmd, "alias:") {
+		// Extract the alias name
+		aliasCmd := strings.TrimSpace(strings.TrimPrefix(cmd.Cmd, "alias:"))
+		util.Message("Running shell alias: %s", aliasCmd)
+
+		// Run in interactive shell to ensure aliases are loaded
+		switch shellName {
+		case "bash":
+			command = exec.Command(userShell, "-ic", aliasCmd)
+		case "zsh":
+			command = exec.Command(userShell, "-ic", aliasCmd)
+		case "fish":
+			command = exec.Command(userShell, "-ic", aliasCmd)
+		default:
+			command = exec.Command(userShell, "-ic", aliasCmd)
+		}
+	} else if cmd.IsExecutable {
 		// For executable commands, look for the executable in all search paths
 		execFound := false
 		var execPath string
@@ -271,29 +299,9 @@ func RunWithSearchPaths(commands map[string]Command, commandName string, executa
 			command = exec.Command("./" + scriptPath)
 		}
 	} else {
-		// For regular commands, try to use the user's shell
-		userShell := os.Getenv("SHELL")
-		if userShell == "" {
-			// Fallback to sh if SHELL is not defined
-			userShell = "/bin/sh"
-			util.Warning("SHELL environment variable not set, defaulting to /bin/sh")
-		}
-
-		// Get the shell name (basename)
-		shellName := filepath.Base(userShell)
-
+		// For regular commands, execute with the shell
 		util.Message("Executing command with shell: %s", shellName)
-
-		// Different shells need different flags to execute commands
-		switch shellName {
-		case "fish":
-			command = exec.Command(userShell, "-c", cmd.Cmd)
-		case "zsh", "bash", "sh":
-			command = exec.Command(userShell, "-c", cmd.Cmd)
-		default:
-			// For unknown shells, try with -c which is most common
-			command = exec.Command(userShell, "-c", cmd.Cmd)
-		}
+		command = exec.Command(userShell, "-c", cmd.Cmd)
 	}
 
 	command.Stdout = os.Stdout

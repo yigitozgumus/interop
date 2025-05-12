@@ -155,13 +155,19 @@ Interop supports several ways to specify and execute commands:
    cmd = "ls -la"
    ```
 
-2. **Local Script Commands**: Scripts that start with `./` are executed directly from the project directory.
+2. **Shell Aliases**: Run aliases defined in your shell's configuration (like .bashrc, .zshrc, or fish config).
+   ```toml
+   [commands.gitstat]
+   cmd = "alias:gst"  # Runs the 'gst' alias from your shell
+   ```
+
+3. **Local Script Commands**: Scripts that start with `./` are executed directly from the project directory.
    ```toml
    [commands.build]
    cmd = "./gradlew :app:assembleDebug"
    ```
 
-3. **Executable Commands**: Executables are searched for in multiple locations when `is_executable = true`:
+4. **Executable Commands**: Executables are searched for in multiple locations when `is_executable = true`:
    ```toml
    [commands.deploy]
    cmd = "deploy.sh"

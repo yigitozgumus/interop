@@ -32,6 +32,49 @@ type CommandConfig struct {
 	IsExecutable bool   `toml:"is_executable"`
 }
 
+// NewCommandConfig creates a new CommandConfig with default values
+func NewCommandConfig() CommandConfig {
+	return CommandConfig{
+		IsEnabled:    true,
+		IsExecutable: false,
+	}
+}
+
+// UnmarshalTOML supports partial command definitions in the TOML settings file
+// This allows having just the cmd field defined with other fields getting defaults
+func (c *CommandConfig) UnmarshalTOML(data interface{}) error {
+	// Set defaults first
+	c.IsEnabled = true
+	c.IsExecutable = false
+	c.Description = ""
+
+	// Handle different input cases
+	switch v := data.(type) {
+	case string:
+		// If the command is specified as just a string, use it as cmd
+		c.Cmd = v
+	case map[string]interface{}:
+		// If a field is present, use its value
+		if cmd, ok := v["cmd"].(string); ok {
+			c.Cmd = cmd
+		}
+		if desc, ok := v["description"].(string); ok {
+			c.Description = desc
+		}
+		c.IsEnabled = getBoolWithDefault(v, "is_enabled", true)
+		c.IsExecutable = getBoolWithDefault(v, "is_executable", false)
+	}
+	return nil
+}
+
+// Helper function to get a boolean value with a default
+func getBoolWithDefault(m map[string]interface{}, key string, defaultValue bool) bool {
+	if val, ok := m[key].(bool); ok {
+		return val
+	}
+	return defaultValue
+}
+
 type Settings struct {
 	LogLevel              string                   `toml:"log_level"`
 	Projects              map[string]Project       `toml:"projects"`
