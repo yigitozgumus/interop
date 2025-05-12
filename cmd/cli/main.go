@@ -35,54 +35,15 @@ func main() {
 		},
 	}
 
-	// Main project command
-	projectCmd := &cobra.Command{
-		Use:   "project",
-		Short: "Project-related operations",
+	// Projects command that shows all projects and their commands
+	projectsCmd := &cobra.Command{
+		Use:   "projects",
+		Short: "List all configured projects with their commands",
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
+			project.ListWithCommands(cfg)
 		},
 	}
-
-	// Project list subcommand (was "projects")
-	projectListCmd := &cobra.Command{
-		Use:   "list",
-		Short: "List all configured projects",
-		Run: func(cmd *cobra.Command, args []string) {
-			project.List(cfg)
-		},
-	}
-	projectCmd.AddCommand(projectListCmd)
-
-	// Project commands subcommand (was "project-commands")
-	projectCommandsCmd := &cobra.Command{
-		Use:   "commands [project-name]",
-		Short: "List commands for a specific project",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			projectName := args[0]
-			commands, err := settings.GetProjectCommands(cfg, projectName)
-			if err != nil {
-				util.Error("Failed to get commands for project '%s': %v", projectName, err)
-			}
-
-			if len(commands) == 0 {
-				fmt.Printf("No commands found for project '%s'.\n", projectName)
-				return
-			}
-
-			fmt.Printf("Commands for project '%s':\n", projectName)
-			fmt.Println("==========================")
-			fmt.Println()
-
-			for name, cmd := range commands {
-				command.PrintCommandDetails(name, cmd)
-			}
-		},
-	}
-	projectCmd.AddCommand(projectCommandsCmd)
-
-	rootCmd.AddCommand(projectCmd)
+	rootCmd.AddCommand(projectsCmd)
 
 	commandCmd := &cobra.Command{
 		Use:   "command",
