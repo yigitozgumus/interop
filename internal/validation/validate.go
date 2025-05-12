@@ -2,11 +2,9 @@ package validation
 
 import (
 	"fmt"
-	"interop/internal/command"
+	"interop/internal/execution"
+	pathPkg "interop/internal/path"
 	"interop/internal/settings"
-	"os"
-	"path/filepath"
-	"strings"
 )
 
 // CommandType represents the type of a command
@@ -145,29 +143,6 @@ func ResolveCommand(cfg *settings.Settings, nameOrAlias string) (*CommandReferen
 	return nil, fmt.Errorf("command or alias '%s' not found", nameOrAlias)
 }
 
-// resolveProjectPath handles tilde expansion and resolves relative paths
-// to absolute paths based on the user's home directory
-func resolveProjectPath(path string) (string, error) {
-	// Get user home directory
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get user home directory: %w", err)
-	}
-
-	// Handle tilde expansion for home directory
-	if strings.HasPrefix(path, "~/") {
-		return filepath.Join(homeDir, path[2:]), nil
-	}
-
-	// If not absolute, treat as relative to home
-	if !filepath.IsAbs(path) {
-		return filepath.Join(homeDir, path), nil
-	}
-
-	// Already absolute
-	return path, nil
-}
-
 // ExecuteCommand runs a command by name or alias
 func ExecuteCommand(cfg *settings.Settings, nameOrAlias string) error {
 	// First, validate all commands
@@ -198,32 +173,28 @@ func ExecuteCommand(cfg *settings.Settings, nameOrAlias string) error {
 			return fmt.Errorf("project '%s' not found", cmdRef.ProjectName)
 		}
 
-		// Resolve the project path (handle tilde and relative paths)
-		resolvedPath, err := resolveProjectPath(project.Path)
+		// Use the path package to get the path
+		pathInfo, err := pathPkg.ExpandAndValidate(project.Path)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to resolve project path: %w", err)
 		}
 
-		projectPath = resolvedPath
+		if !pathInfo.Exists {
+			return fmt.Errorf("project directory doesn't exist: %s", project.Path)
+		}
+
+		projectPath = pathInfo.Absolute
 	}
 
-	// Convert the settings.CommandConfig to command.Command
-	cmdToRun := command.Command{
+	// Convert CommandConfig to execution.CommandInfo
+	execInfo := execution.CommandInfo{
+		Name:         cmdRef.Name,
 		Description:  cmdRef.Command.Description,
 		IsEnabled:    cmdRef.Command.IsEnabled,
 		Cmd:          cmdRef.Command.Cmd,
 		IsExecutable: cmdRef.Command.IsExecutable,
 	}
 
-	// Create a new map with just the command we want to run
-	commandToRun := map[string]command.Command{
-		cmdRef.Name: cmdToRun,
-	}
-
-	// Run the command with all search paths
-	if projectPath != "" {
-		return command.RunWithSearchPaths(commandToRun, cmdRef.Name, searchPaths, projectPath)
-	}
-
-	return command.RunWithSearchPaths(commandToRun, cmdRef.Name, searchPaths)
+	// Run the command using the execution package
+	return execution.RunWithSearchPaths(execInfo, searchPaths, projectPath)
 }

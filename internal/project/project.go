@@ -1,163 +1,145 @@
 package project
 
 import (
-	"fmt"
+	"interop/internal/display"
+	"interop/internal/path"
 	"interop/internal/settings"
 	"interop/internal/util"
-	"os"
-	"path/filepath"
-	"strings"
 )
 
 // List prints out all configured projects with their name, path, and validity
 func List(cfg *settings.Settings) {
 	if len(cfg.Projects) == 0 {
-		fmt.Println("No projects found.")
+		display.PrintNoItemsFound("projects")
 		return
 	}
 
-	fmt.Println("PROJECTS:")
-	fmt.Println("=========")
-	fmt.Println()
+	display.PrintProjectHeader()
 
-	homeDir, err := os.UserHomeDir()
+	// Using path package directly instead of keeping homeDir
+	_, err := path.HomeDir()
 	if err != nil {
-		homeDir = ""
 		util.Warning("Warning: Could not determine home directory")
 	}
 
 	for name, project := range cfg.Projects {
-		path := project.Path
-
-		// Handle tilde expansion for home directory
-		if strings.HasPrefix(path, "~/") && homeDir != "" {
-			path = filepath.Join(homeDir, path[2:])
-		}
-
-		var fullPath string
-		if filepath.IsAbs(path) {
-			fullPath = path
-		} else {
-			fullPath = filepath.Join(homeDir, path)
+		// Use the path package to validate and expand the path
+		pathInfo, err := path.ExpandAndValidate(project.Path)
+		if err != nil {
+			util.Warning("Failed to expand path for project %s: %v", name, err)
+			continue
 		}
 
 		valid := "✓"
-		inHomeDir := "✓"
-
-		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		if !pathInfo.Exists {
 			valid = "✗"
 		}
 
-		if homeDir != "" {
-			if filepath.IsAbs(path) {
-				if !strings.HasPrefix(path, homeDir) {
-					inHomeDir = "✗"
-				}
-			}
+		inHomeDir := "✓"
+		if !pathInfo.InHomeDir {
+			inHomeDir = "✗"
 		}
 
-		// Print project name and path
-		fmt.Printf("📁 Name: %s\n", name)
-		fmt.Printf("   Path: %s\n", project.Path)
+		// Print project details using display package
+		display.PrintProjectName(name)
+		display.PrintProjectPath(project.Path)
+		display.PrintProjectStatus(valid, inHomeDir)
+		display.PrintProjectDescription(project.Description)
 
-		// Print status indicators
-		fmt.Printf("   Status: Valid: %s  |  In $HOME: %s\n", valid, inHomeDir)
-
-		// Print description if exists
-		if project.Description != "" {
-			fmt.Printf("   Description: %s\n", project.Description)
-		}
-
-		// Add separator between projects
-		fmt.Println()
+		display.PrintSeparator()
 	}
 }
 
 // ListWithCommands prints out all configured projects with their commands
 func ListWithCommands(cfg *settings.Settings) {
 	if len(cfg.Projects) == 0 {
-		fmt.Println("No projects found.")
+		display.PrintNoItemsFound("projects")
 		return
 	}
 
-	fmt.Println("PROJECTS:")
-	fmt.Println("=========")
-	fmt.Println()
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		homeDir = ""
-		util.Warning("Warning: Could not determine home directory")
-	}
+	display.PrintProjectHeader()
 
 	for name, project := range cfg.Projects {
-		path := project.Path
-
-		// Handle tilde expansion for home directory
-		if strings.HasPrefix(path, "~/") && homeDir != "" {
-			path = filepath.Join(homeDir, path[2:])
-		}
-
-		var fullPath string
-		if filepath.IsAbs(path) {
-			fullPath = path
-		} else {
-			fullPath = filepath.Join(homeDir, path)
+		// Use the path package to validate and expand the path
+		pathInfo, err := path.ExpandAndValidate(project.Path)
+		if err != nil {
+			util.Warning("Failed to expand path for project %s: %v", name, err)
+			continue
 		}
 
 		valid := "✓"
-		inHomeDir := "✓"
-
-		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		if !pathInfo.Exists {
 			valid = "✗"
 		}
 
-		if homeDir != "" {
-			if filepath.IsAbs(path) {
-				if !strings.HasPrefix(path, homeDir) {
-					inHomeDir = "✗"
-				}
-			}
+		inHomeDir := "✓"
+		if !pathInfo.InHomeDir {
+			inHomeDir = "✗"
 		}
 
-		// Print project name and path
-		fmt.Printf("📁 Name: %s\n", name)
-		fmt.Printf("   Path: %s\n", project.Path)
-
-		// Print status indicators
-		fmt.Printf("   Status: Valid: %s  |  In $HOME: %s\n", valid, inHomeDir)
-
-		// Print description if exists
-		if project.Description != "" {
-			fmt.Printf("   Description: %s\n", project.Description)
-		}
+		// Print project details using display package
+		display.PrintProjectName(name)
+		display.PrintProjectPath(project.Path)
+		display.PrintProjectStatus(valid, inHomeDir)
+		display.PrintProjectDescription(project.Description)
 
 		// Display commands for this project
 		if len(project.Commands) > 0 {
-			fmt.Printf("   Commands:\n")
+			// Print commands header
+			display.PrintCommandProjects([]string{})
 
 			for _, alias := range project.Commands {
 				cmd, exists := cfg.Commands[alias.CommandName]
 				if !exists {
-					fmt.Printf("      ⚠️ %s (referenced command not found)\n", alias.CommandName)
+					display.PrintUnresolvedCommand(alias.CommandName)
 					continue
 				}
 
-				// Show command name and alias if present
-				if alias.Alias != "" {
-					fmt.Printf("      ⚡ %s (alias: %s)\n", alias.CommandName, alias.Alias)
-				} else {
-					fmt.Printf("      ⚡ %s\n", alias.CommandName)
-				}
-
-				// If command has a description, display it indented
-				if cmd.Description != "" {
-					fmt.Printf("         %s\n", cmd.Description)
-				}
+				display.PrintProjectCommands(alias.CommandName, alias.Alias, cmd.Description)
 			}
 		}
 
-		// Add separator between projects
-		fmt.Println()
+		display.PrintSeparator()
+	}
+}
+
+// ListWithCustomHomeDir is used for testing to allow overriding the home directory
+func ListWithCustomHomeDir(cfg *settings.Settings, homeDirFunc func() (string, error)) {
+	if len(cfg.Projects) == 0 {
+		display.PrintNoItemsFound("projects")
+		return
+	}
+
+	display.PrintProjectHeader()
+
+	// Set up custom home directory for testing
+	resetHomeDir := path.SetHomeDirFunc(homeDirFunc)
+	defer resetHomeDir()
+
+	for name, project := range cfg.Projects {
+		// Now use the path package which will use our custom homeDirFunc
+		pathInfo, err := path.ExpandAndValidate(project.Path)
+		if err != nil {
+			util.Warning("Failed to expand path for project %s: %v", name, err)
+			continue
+		}
+
+		valid := "✓"
+		if !pathInfo.Exists {
+			valid = "✗"
+		}
+
+		inHomeDirStr := "✓"
+		if !pathInfo.InHomeDir {
+			inHomeDirStr = "✗"
+		}
+
+		// Print project details using display package
+		display.PrintProjectName(name)
+		display.PrintProjectPath(project.Path)
+		display.PrintProjectStatus(valid, inHomeDirStr)
+		display.PrintProjectDescription(project.Description)
+
+		display.PrintSeparator()
 	}
 }

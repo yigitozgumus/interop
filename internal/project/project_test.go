@@ -39,8 +39,8 @@ func TestList(t *testing.T) {
 	// Restore stdout
 	os.Stdout = oldStdout
 
-	// Basic verification
-	if !strings.Contains(output, "test: test-project") {
+	// Basic verification - updated for new display format
+	if !strings.Contains(output, "Name: test") && !strings.Contains(output, "Path: test-project") {
 		t.Errorf("Expected output to contain project information, got %q", output)
 	}
 }
@@ -81,9 +81,9 @@ func TestListWithCustomHomeDir(t *testing.T) {
 			homeDir: tempHomeDir,
 			expectedOutput: []string{
 				"PROJECTS:",
-				"valid:",
-				"[Valid: ✓]",
-				"[In $HOME: ✓]",
+				"Name: valid",
+				"Valid: ✓",
+				"In $HOME: ✓",
 				"Description: A valid project",
 			},
 		},
@@ -98,9 +98,9 @@ func TestListWithCustomHomeDir(t *testing.T) {
 			homeDir: tempHomeDir,
 			expectedOutput: []string{
 				"PROJECTS:",
-				"invalid:",
-				"[Valid: ✗]",
-				"[In $HOME: ✓]",
+				"Name: invalid",
+				"Valid: ✗",
+				"In $HOME: ✓",
 				"Description: A non-existent project",
 			},
 		},
@@ -115,8 +115,8 @@ func TestListWithCustomHomeDir(t *testing.T) {
 			homeDir: tempHomeDir,
 			expectedOutput: []string{
 				"PROJECTS:",
-				"outside:",
-				"[In $HOME: ✗]",
+				"Name: outside",
+				"In $HOME: ✗",
 				"Description: A project outside home",
 			},
 		},
@@ -131,10 +131,10 @@ func TestListWithCustomHomeDir(t *testing.T) {
 			homeDir: tempHomeDir,
 			expectedOutput: []string{
 				"PROJECTS:",
-				"relative:",
-				"valid-project",
-				"[Valid: ✓]",
-				"[In $HOME: ✓]",
+				"Name: relative",
+				"Path: valid-project",
+				"Valid: ✓",
+				"In $HOME: ✓",
 				"Description: A project with relative path",
 			},
 		},
