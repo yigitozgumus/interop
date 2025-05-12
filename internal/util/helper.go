@@ -40,43 +40,77 @@ func ParseLogLevel(level string) LogLevel {
 
 // Logger handles log operations with level filtering
 type Logger struct {
-	level LogLevel
+	level     LogLevel
+	useColors bool
 }
 
 // NewLogger creates a new logger with the specified log level
 func NewLogger(level string) *Logger {
 	return &Logger{
-		level: ParseLogLevel(level),
+		level:     ParseLogLevel(level),
+		useColors: true,
 	}
+}
+
+// DisableColors turns off color formatting in log messages
+func (l *Logger) DisableColors() {
+	l.useColors = false
+}
+
+// EnableColors turns on color formatting in log messages
+func (l *Logger) EnableColors() {
+	l.useColors = true
 }
 
 // Error prints a red "Error: …" message to stderr.
 func (l *Logger) Error(format string, args ...interface{}) {
 	// Error messages are always printed regardless of log level
-	fmt.Fprintf(os.Stderr, colorRed+"Error: "+colorReset+format+"\n", args...)
+	if l.useColors {
+		fmt.Fprintf(os.Stderr, colorRed+"Error: "+colorReset+format+"\n", args...)
+	} else {
+		fmt.Fprintf(os.Stderr, "Error: "+format+"\n", args...)
+	}
 }
 
 // Warning prints a yellow "Warning: …" message to stdout if log level permits.
 func (l *Logger) Warning(format string, args ...interface{}) {
 	if l.level >= LevelWarning {
-		fmt.Printf(colorYellow+"Warning: "+colorReset+format+"\n", args...)
+		if l.useColors {
+			fmt.Printf(colorYellow+"Warning: "+colorReset+format+"\n", args...)
+		} else {
+			fmt.Printf("Warning: "+format+"\n", args...)
+		}
 	}
 }
 
 // Message prints a green "Message: …" message to stdout if log level permits.
 func (l *Logger) Message(format string, args ...interface{}) {
 	if l.level >= LevelVerbose {
-		fmt.Printf(colorGreen+"Message: "+colorReset+format+"\n", args...)
+		if l.useColors {
+			fmt.Printf(colorGreen+"Message: "+colorReset+format+"\n", args...)
+		} else {
+			fmt.Printf("Message: "+format+"\n", args...)
+		}
 	}
 }
 
 // Legacy standalone functions that use the default logger
 
-var defaultLogger = &Logger{level: LevelError}
+var defaultLogger = &Logger{level: LevelError, useColors: true}
 
 // SetDefaultLogLevel updates the log level of the default logger
 func SetDefaultLogLevel(level string) {
 	defaultLogger.level = ParseLogLevel(level)
+}
+
+// DisableColors turns off color formatting in the default logger
+func DisableColors() {
+	defaultLogger.useColors = false
+}
+
+// EnableColors turns on color formatting in the default logger
+func EnableColors() {
+	defaultLogger.useColors = true
 }
 
 // Error makes the program exit with a non-zero status when an error occurs

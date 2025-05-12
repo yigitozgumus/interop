@@ -14,7 +14,7 @@ import (
 func StartServer() error {
 	server, err := NewServer()
 	if err != nil {
-		return fmt.Errorf("failed to initialize MCP server: %w", err)
+		logging.Error("failed to initialize MCP server: %w", err)
 	}
 
 	if server.IsRunning() {
@@ -23,7 +23,7 @@ func StartServer() error {
 	}
 
 	if err := server.Start(); err != nil {
-		return fmt.Errorf("failed to start MCP server: %w", err)
+		logging.ErrorAndExit("failed to start MCP server: %w", err)
 	}
 
 	logging.Message("MCP server started successfully")
@@ -34,7 +34,7 @@ func StartServer() error {
 func StopServer() error {
 	server, err := NewServer()
 	if err != nil {
-		return fmt.Errorf("failed to initialize MCP server: %w", err)
+		logging.ErrorAndExit("failed to initialize MCP server: %w", err)
 	}
 
 	if !server.IsRunning() {
@@ -43,7 +43,7 @@ func StopServer() error {
 	}
 
 	if err := server.Stop(); err != nil {
-		return fmt.Errorf("failed to stop MCP server: %w", err)
+		logging.ErrorAndExit("failed to stop MCP server: %w", err)
 	}
 
 	logging.Message("MCP server stopped successfully")
@@ -54,11 +54,11 @@ func StopServer() error {
 func RestartServer() error {
 	server, err := NewServer()
 	if err != nil {
-		return fmt.Errorf("failed to initialize MCP server: %w", err)
+		logging.ErrorAndExit("failed to initialize MCP server: %w", err)
 	}
 
 	if err := server.Restart(); err != nil {
-		return fmt.Errorf("failed to restart MCP server: %w", err)
+		logging.ErrorAndExit("failed to restart MCP server: %w", err)
 	}
 
 	logging.Message("MCP server restarted successfully")
@@ -80,11 +80,11 @@ func GetServerHealth() error {
 	// Check if server is running
 	server, err := NewServer()
 	if err != nil {
-		return fmt.Errorf("failed to initialize MCP server: %w", err)
+		logging.ErrorAndExit("failed to initialize MCP server: %w", err)
 	}
 
 	if !server.IsRunning() {
-		return fmt.Errorf("MCP server is not running")
+		logging.Error("MCP server is not running")
 	}
 
 	// Check server health
@@ -278,6 +278,10 @@ func StreamServerEvents() error {
 // RunHTTPServer runs the MCP HTTP server directly (not as a daemon)
 // This function is called by the daemon subprocess
 func (s *Server) RunHTTPServer() error {
+	// Disable colors in the logger to avoid JSON parsing issues
+	logging.DisableColors()
+	logging.Message("Initializing server...")
+
 	// Create a new MCP library server
 	mcpLibServer, err := NewMCPLibServer()
 	if err != nil {
@@ -289,7 +293,19 @@ func (s *Server) RunHTTPServer() error {
 		return fmt.Errorf("failed to start MCP library server: %w", err)
 	}
 
-	// Keep the main process running
-	logging.Message("MCP HTTP server running with new library implementation...")
-	select {} // Block forever
+	logging.Message("Server started and connected successfully")
+
+	// Handle OS signals for graceful shutdown
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+
+	// Wait for shutdown signal
+	<-signals
+
+	// Stop the server gracefully when signal received
+	if err := mcpLibServer.Stop(); err != nil {
+		logging.Error("Error stopping MCP server: %v", err)
+	}
+
+	return nil
 }

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -29,8 +30,42 @@ type MCPLibServer struct {
 	commandConfig map[string]settings.CommandConfig
 }
 
+// logToFile logs a message to the log file with a timestamp
+func (s *MCPLibServer) logToFile(level, format string, args ...interface{}) {
+	timestamp := time.Now().Format("2006-01-02 15:04:05.000")
+	message := fmt.Sprintf(format, args...)
+	fmt.Fprintf(s.logFile, "[%s] [%s] %s\n", timestamp, level, message)
+}
+
+// logInfo logs an informational message to the log file
+func (s *MCPLibServer) logInfo(format string, args ...interface{}) {
+	s.logToFile("INFO", format, args...)
+}
+
+// logWarning logs a warning message to the log file
+func (s *MCPLibServer) logWarning(format string, args ...interface{}) {
+	s.logToFile("WARNING", format, args...)
+}
+
+// logError logs an error message to the log file
+func (s *MCPLibServer) logError(format string, args ...interface{}) {
+	s.logToFile("ERROR", format, args...)
+}
+
+// sanitizeOutput ensures there are no ANSI color codes in the output
+// This helps prevent JSON parsing errors in the client
+func sanitizeOutput(output string) string {
+	// ANSI color code regex pattern
+	colorPattern := regexp.MustCompile("\x1b\\[[0-9;]*m")
+	return colorPattern.ReplaceAllString(output, "")
+}
+
 // NewMCPLibServer creates a new MCP server using the mark3labs/mcp-go library
 func NewMCPLibServer() (*MCPLibServer, error) {
+	// Disable colors in our internal logging package
+	// This is essential to prevent color codes from corrupting JSON output
+	logging.DisableColors()
+
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get home directory: %w", err)
@@ -49,22 +84,33 @@ func NewMCPLibServer() (*MCPLibServer, error) {
 		return nil, fmt.Errorf("failed to create log file: %w", err)
 	}
 
+	// Redirect standard output to log file for MCP server logging
+	// This is necessary because the MCP server logs to stdout
+	// Save the original stdout for later restoration if needed
+	originalStdout := os.Stdout
+	os.Stdout = logFile
+
+	// Make sure we restore stdout and close log file if there's an error
+	cleanup := func() {
+		os.Stdout = originalStdout
+		logFile.Close()
+	}
+
 	// Load commands from settings
 	cfg, err := settings.Load()
 	if err != nil {
-		logFile.Close()
+		cleanup()
 		return nil, fmt.Errorf("failed to load settings: %w", err)
 	}
 
 	// Set up the port
 	port := 4567
 
-	// Create MCP server
+	// Create MCP server with logging disabled
 	mcpServer := server.NewMCPServer(
 		"Interop MCP Server",
 		"1.0.0",
 		server.WithToolCapabilities(true),
-		server.WithLogging(),
 	)
 
 	// Create HTTP server for the MCP
@@ -87,6 +133,9 @@ func NewMCPLibServer() (*MCPLibServer, error) {
 
 	// Register tools based on available commands
 	s.registerCommandTools()
+
+	// Write initial log message to file only, not stdout
+	s.logInfo("MCP server initialized")
 
 	return s, nil
 }
@@ -128,11 +177,11 @@ func (s *MCPLibServer) registerCommandTools() {
 				return mcp.NewToolResultError(fmt.Sprintf("Command execution failed: %v", err)), nil
 			}
 
-			// Return the result
-			return mcp.NewToolResultText(result), nil
+			// Return the sanitized result
+			return mcp.NewToolResultText(sanitizeOutput(result)), nil
 		})
 
-		logging.Message("Registered MCP tool for command: %s", name)
+		s.logInfo("Registered MCP tool for command: %s", name)
 	}
 
 	// Add a special commands tool that lists available commands
@@ -154,10 +203,10 @@ func (s *MCPLibServer) registerCommandTools() {
 
 		// Format the output as JSON text
 		cmdJSON, _ := json.MarshalIndent(commands, "", "  ")
-		return mcp.NewToolResultText(string(cmdJSON)), nil
+		return mcp.NewToolResultText(sanitizeOutput(string(cmdJSON))), nil
 	})
 
-	logging.Message("Registered MCP commands tool")
+	s.logInfo("Registered MCP commands tool")
 
 	// Add a cursor-specific tool for better integration
 	cursorTool := mcp.NewTool(
@@ -186,21 +235,21 @@ func (s *MCPLibServer) registerCommandTools() {
 			for _, tool := range tools {
 				result += "- " + tool + "\n"
 			}
-			return mcp.NewToolResultText(result), nil
+			return mcp.NewToolResultText(sanitizeOutput(result)), nil
 
 		case "get_status":
 			// Return server status as text
 			result := fmt.Sprintf("Server status: ready\nTools count: %d\nStarted at: %s",
 				len(s.GetToolNames()),
 				time.Now().Format(time.RFC3339))
-			return mcp.NewToolResultText(result), nil
+			return mcp.NewToolResultText(sanitizeOutput(result)), nil
 
 		default:
 			return mcp.NewToolResultError(fmt.Sprintf("Unknown cursor operation: %s", operation)), nil
 		}
 	})
 
-	logging.Message("Registered cursor tool for Cursor IDE integration")
+	s.logInfo("Registered cursor tool for Cursor IDE integration")
 
 	// Add a simple ping tool that responds with pong - often expected by clients
 	pingTool := mcp.NewTool(
@@ -212,7 +261,7 @@ func (s *MCPLibServer) registerCommandTools() {
 		return mcp.NewToolResultText("pong"), nil
 	})
 
-	logging.Message("Registered ping tool")
+	s.logInfo("Registered ping tool")
 
 	// Add an echo tool - standard for MCP servers
 	echoTool := mcp.NewTool(
@@ -231,10 +280,10 @@ func (s *MCPLibServer) registerCommandTools() {
 			}
 		}
 
-		return mcp.NewToolResultText(message), nil
+		return mcp.NewToolResultText(sanitizeOutput(message)), nil
 	})
 
-	logging.Message("Registered echo tool")
+	s.logInfo("Registered echo tool")
 }
 
 // executeCommand runs a command and returns its output
@@ -246,7 +295,7 @@ func (s *MCPLibServer) executeCommand(name, cmdStr string, args map[string]inter
 		cmdStr = strings.ReplaceAll(cmdStr, placeholder, valueStr)
 	}
 
-	logging.Message("Executing command: %s (%s)", name, cmdStr)
+	s.logInfo("Executing command: %s (%s)", name, cmdStr)
 
 	// Create a temporary file for output
 	tmpDir, err := os.MkdirTemp(s.configDir, "cmd-output-*")
@@ -273,7 +322,8 @@ func (s *MCPLibServer) executeCommand(name, cmdStr string, args map[string]inter
 		outFile.Seek(0, 0)
 		output, _ := os.ReadFile(outputFile)
 
-		return fmt.Sprintf("Command failed: %v\nOutput:\n%s", err, string(output)), err
+		// Make sure to sanitize the output to remove any ANSI color codes
+		return sanitizeOutput(fmt.Sprintf("Command failed: %v\nOutput:\n%s", err, string(output))), err
 	}
 
 	// Read command output
@@ -283,12 +333,16 @@ func (s *MCPLibServer) executeCommand(name, cmdStr string, args map[string]inter
 		return "", fmt.Errorf("failed to read command output: %w", err)
 	}
 
-	return string(output), nil
+	// Return sanitized output
+	return sanitizeOutput(string(output)), nil
 }
 
 // Start starts the MCP server with HTTP and SSE
 func (s *MCPLibServer) Start() error {
-	logging.Message("Starting MCP server with HTTP on port %d", s.port)
+	s.logInfo("Starting MCP server with HTTP on port %d", s.port)
+
+	// Ensure colors are disabled again just before starting server
+	logging.DisableColors()
 
 	// Set up HTTP handlers
 	mux := http.NewServeMux()
@@ -303,11 +357,10 @@ func (s *MCPLibServer) Start() error {
 		w.Header().Set("Content-Type", "application/json")
 		toolNames := s.GetToolNames()
 		response := map[string]interface{}{
-			"status":      "ok",
-			"message":     "MCP Server is running",
-			"tools_count": len(toolNames),
-			"tools":       toolNames,
-			// Add standard MCP identification
+			"status":       "ok",
+			"message":      "MCP Server is running",
+			"tools_count":  len(toolNames),
+			"tools":        toolNames,
 			"mcp":          true,
 			"version":      "1.0.0",
 			"name":         "Interop MCP Server",
@@ -327,7 +380,7 @@ func (s *MCPLibServer) Start() error {
 
 		// Log that a client connected
 		clientIP := r.RemoteAddr
-		logging.Message("SSE client connected from %s", clientIP)
+		s.logInfo("SSE client connected from %s", clientIP)
 
 		// Use context to detect when client disconnects
 		ctx, cancel := context.WithCancel(r.Context())
@@ -353,7 +406,7 @@ func (s *MCPLibServer) Start() error {
 		go func() {
 			<-ctx.Done()
 			heartbeatTicker.Stop()
-			logging.Message("SSE client %s disconnected", clientIP)
+			s.logInfo("SSE client %s disconnected", clientIP)
 		}()
 
 		// Keep the connection open and send heartbeats
@@ -364,7 +417,7 @@ func (s *MCPLibServer) Start() error {
 			case <-heartbeatTicker.C:
 				heartbeat := fmt.Sprintf("event: heartbeat\ndata: {\"time\":\"%s\"}\n\n", time.Now().Format(time.RFC3339))
 				if _, err := fmt.Fprint(w, heartbeat); err != nil {
-					logging.Warning("Failed to send heartbeat: %v", err)
+					s.logWarning("Failed to send heartbeat: %v", err)
 					return
 				}
 				flusher.Flush()
@@ -382,7 +435,7 @@ func (s *MCPLibServer) Start() error {
 	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
 		// For SSE connection requests, redirect to SSE handler
 		if r.Header.Get("Accept") == "text/event-stream" {
-			logging.Message("SSE connection attempt on /mcp - redirecting to /events")
+			s.logInfo("SSE connection attempt on /mcp - redirecting to /events")
 			http.Redirect(w, r, "/events", http.StatusTemporaryRedirect)
 			return
 		}
@@ -402,17 +455,34 @@ func (s *MCPLibServer) Start() error {
 			// Read the body
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
-				http.Error(w, "Error reading request body", http.StatusBadRequest)
+				s.logError("Error reading request body: %v", err)
+				errorResponse := map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      nil,
+					"error": map[string]interface{}{
+						"code":    -32700,
+						"message": "Parse error: invalid JSON was received by the server",
+					},
+				}
+				json.NewEncoder(w).Encode(errorResponse)
 				return
 			}
 
 			// Log raw request for debugging
-			logging.Message("Received JSON-RPC request: %s", string(body))
+			s.logInfo("Received JSON-RPC request: %s", string(body))
 
 			// Parse request
 			if err := json.Unmarshal(body, &rpcRequest); err != nil {
-				logging.Error("Error parsing JSON-RPC request: %v", err)
-				http.Error(w, "Invalid JSON-RPC request", http.StatusBadRequest)
+				s.logError("Error parsing JSON-RPC request: %v", err)
+				errorResponse := map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      nil,
+					"error": map[string]interface{}{
+						"code":    -32700,
+						"message": "Parse error: invalid JSON was received by the server",
+					},
+				}
+				json.NewEncoder(w).Encode(errorResponse)
 				return
 			}
 
@@ -456,7 +526,7 @@ func (s *MCPLibServer) Start() error {
 				}
 
 				if err := json.Unmarshal(rpcRequest.Params, &params); err != nil {
-					logging.Error("Error parsing mcpCallTool params: %v", err)
+					s.logError("Error parsing mcpCallTool params: %v", err)
 					errorResponse := map[string]interface{}{
 						"jsonrpc": "2.0",
 						"id":      rpcRequest.Id,
@@ -469,7 +539,7 @@ func (s *MCPLibServer) Start() error {
 					return
 				}
 
-				logging.Message("Tool call request: %s with args: %v", params.Name, params.Arguments)
+				s.logInfo("Tool call request: %s with args: %v", params.Name, params.Arguments)
 
 				var result string
 				var resultErr error
@@ -551,7 +621,7 @@ func (s *MCPLibServer) Start() error {
 						"id":      rpcRequest.Id,
 						"result": map[string]interface{}{
 							"kind":  "text",
-							"value": result,
+							"value": sanitizeOutput(result),
 						},
 					}
 					json.NewEncoder(w).Encode(response)
@@ -729,7 +799,7 @@ func (s *MCPLibServer) Start() error {
 	// Start HTTP server
 	go func() {
 		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logging.Error("HTTP server error: %v", err)
+			s.logError("HTTP server error: %v", err)
 		}
 	}()
 
@@ -738,7 +808,10 @@ func (s *MCPLibServer) Start() error {
 
 // Stop stops the MCP server
 func (s *MCPLibServer) Stop() error {
-	logging.Message("Stopping MCP server")
+	s.logInfo("Stopping MCP server")
+
+	// Restore stdout before closing the log file
+	os.Stdout = os.Stderr
 
 	// Close log file
 	if s.logFile != nil {
