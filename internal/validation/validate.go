@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"interop/internal/command"
 	"interop/internal/settings"
+	"os"
+	"path/filepath"
+	"strings"
 )
 
 // CommandType represents the type of a command
@@ -142,6 +145,29 @@ func ResolveCommand(cfg *settings.Settings, nameOrAlias string) (*CommandReferen
 	return nil, fmt.Errorf("command or alias '%s' not found", nameOrAlias)
 }
 
+// resolveProjectPath handles tilde expansion and resolves relative paths
+// to absolute paths based on the user's home directory
+func resolveProjectPath(path string) (string, error) {
+	// Get user home directory
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get user home directory: %w", err)
+	}
+
+	// Handle tilde expansion for home directory
+	if strings.HasPrefix(path, "~/") {
+		return filepath.Join(homeDir, path[2:]), nil
+	}
+
+	// If not absolute, treat as relative to home
+	if !filepath.IsAbs(path) {
+		return filepath.Join(homeDir, path), nil
+	}
+
+	// Already absolute
+	return path, nil
+}
+
 // ExecuteCommand runs a command by name or alias
 func ExecuteCommand(cfg *settings.Settings, nameOrAlias string) error {
 	// First, validate all commands
@@ -171,7 +197,13 @@ func ExecuteCommand(cfg *settings.Settings, nameOrAlias string) error {
 		if !exists {
 			return fmt.Errorf("project '%s' not found", cmdRef.ProjectName)
 		}
-		projectPath = project.Path
+
+		// Resolve the project path (handle tilde and relative paths)
+		resolvedPath, err := resolveProjectPath(project.Path)
+		if err != nil {
+			return err
+		}
+		projectPath = resolvedPath
 	}
 
 	// Run the command
