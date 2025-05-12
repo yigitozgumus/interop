@@ -2,14 +2,16 @@ package main
 
 import (
 	"fmt"
-	"github.com/spf13/cobra"
 	"interop/internal/command"
 	"interop/internal/edit"
 	"interop/internal/project"
 	"interop/internal/settings"
 	"interop/internal/util"
+	"interop/internal/validation"
 	"log"
 	"os"
+
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -98,29 +100,26 @@ func main() {
 		},
 	}
 
-	commandRunCmd := &cobra.Command{
-		Use:   "run [command-name]",
-		Short: "Execute a configured command",
+	// New run command that supports both command names and aliases
+	runCmd := &cobra.Command{
+		Use:   "run [command-or-alias]",
+		Short: "Execute a command by name or alias",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			commandName := args[0]
+			commandOrAlias := args[0]
 
-			// Get the executables path
-			executablesPath, err := settings.GetExecutablesPath()
+			// Validate configuration and run the command
+			err := validation.ExecuteCommand(cfg, commandOrAlias)
 			if err != nil {
-				util.Error("Failed to get executables path: %v", err)
-			}
-
-			err = command.Run(cfg.Commands, commandName, executablesPath)
-			if err != nil {
-				util.Error("Failed to run command '%s': %v", commandName, err)
+				util.Error("Failed to run '%s': %v", commandOrAlias, err)
+				os.Exit(1)
 			}
 		},
 	}
 
 	commandCmd.AddCommand(commandListCmd)
-	commandCmd.AddCommand(commandRunCmd)
 	rootCmd.AddCommand(commandCmd)
+	rootCmd.AddCommand(runCmd) // Add run as a top-level command for easier access
 
 	editCmd := &cobra.Command{
 		Use:   "edit",
@@ -135,6 +134,39 @@ func main() {
 	}
 
 	rootCmd.AddCommand(editCmd)
+
+	// Add validation command to check configuration
+	validateCmd := &cobra.Command{
+		Use:   "validate",
+		Short: "Validate the configuration file",
+		Run: func(cmd *cobra.Command, args []string) {
+			errors := validation.ValidateCommands(cfg)
+			if len(errors) == 0 {
+				fmt.Println("✅ Configuration is valid!")
+				return
+			}
+
+			fmt.Println("⚠️ Configuration validation issues:")
+			fmt.Println("==================================")
+			fmt.Println()
+
+			severe := false
+			for _, err := range errors {
+				severity := "Warning"
+				if err.Severe {
+					severity = "Error"
+					severe = true
+				}
+				fmt.Printf("[%s] %s\n", severity, err.Message)
+			}
+
+			if severe {
+				os.Exit(1)
+			}
+		},
+	}
+
+	rootCmd.AddCommand(validateCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)

@@ -1,7 +1,6 @@
 package command
 
 import (
-	"reflect"
 	"testing"
 )
 
@@ -11,10 +10,6 @@ func TestNewCommand(t *testing.T) {
 	// Test default values
 	if !cmd.IsEnabled {
 		t.Error("Expected IsEnabled to be true by default")
-	}
-
-	if len(cmd.Projects) != 0 {
-		t.Error("Expected Projects to be empty by default")
 	}
 
 	if cmd.IsExecutable {
@@ -31,7 +26,6 @@ func TestPrintCommandDetails(t *testing.T) {
 	cmd := Command{
 		Description:  "Test command",
 		IsEnabled:    true,
-		Projects:     []string{"project1", "project2"},
 		Cmd:          "echo 'hello world'",
 		IsExecutable: true,
 	}
@@ -46,14 +40,12 @@ func TestList(t *testing.T) {
 		"test1": {
 			Description:  "Test command 1",
 			IsEnabled:    true,
-			Projects:     []string{"project1"},
 			Cmd:          "echo 'test1'",
 			IsExecutable: false,
 		},
 		"test2": {
 			Description:  "",
 			IsEnabled:    false,
-			Projects:     []string{},
 			Cmd:          "echo 'test2'",
 			IsExecutable: true,
 		},
@@ -88,10 +80,6 @@ func TestUnmarshalTOMLWithString(t *testing.T) {
 		t.Error("Expected IsExecutable to default to false")
 	}
 
-	if len(cmd.Projects) != 0 {
-		t.Error("Expected Projects to default to empty slice")
-	}
-
 	if cmd.Description != "" {
 		t.Error("Expected Description to default to empty string")
 	}
@@ -111,7 +99,6 @@ func TestUnmarshalTOMLWithMap(t *testing.T) {
 				Cmd:          "echo minimal",
 				IsEnabled:    true,
 				IsExecutable: false,
-				Projects:     []string{},
 				Description:  "",
 			},
 		},
@@ -123,7 +110,6 @@ func TestUnmarshalTOMLWithMap(t *testing.T) {
 				Description:  "test desc",
 				IsEnabled:    true,
 				IsExecutable: false,
-				Projects:     []string{},
 			},
 		},
 		{
@@ -133,21 +119,6 @@ func TestUnmarshalTOMLWithMap(t *testing.T) {
 				Cmd:          "echo flags",
 				IsEnabled:    false,
 				IsExecutable: true,
-				Projects:     []string{},
-				Description:  "",
-			},
-		},
-		{
-			name: "with projects",
-			input: map[string]interface{}{
-				"cmd":      "echo projects",
-				"projects": []interface{}{"project1", "project2"},
-			},
-			expected: Command{
-				Cmd:          "echo projects",
-				IsEnabled:    true,
-				IsExecutable: false,
-				Projects:     []string{"project1", "project2"},
 				Description:  "",
 			},
 		},
@@ -158,14 +129,12 @@ func TestUnmarshalTOMLWithMap(t *testing.T) {
 				"description":   "full config",
 				"is_enabled":    false,
 				"is_executable": true,
-				"projects":      []interface{}{"project1", "project2"},
 			},
 			expected: Command{
 				Cmd:          "echo all",
 				Description:  "full config",
 				IsEnabled:    false,
 				IsExecutable: true,
-				Projects:     []string{"project1", "project2"},
 			},
 		},
 	}
@@ -191,10 +160,6 @@ func TestUnmarshalTOMLWithMap(t *testing.T) {
 
 			if cmd.IsExecutable != tc.expected.IsExecutable {
 				t.Errorf("Expected IsExecutable to be %v, got %v", tc.expected.IsExecutable, cmd.IsExecutable)
-			}
-
-			if !reflect.DeepEqual(cmd.Projects, tc.expected.Projects) {
-				t.Errorf("Expected Projects to be %v, got %v", tc.expected.Projects, cmd.Projects)
 			}
 		})
 	}
