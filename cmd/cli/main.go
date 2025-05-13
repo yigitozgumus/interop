@@ -192,131 +192,6 @@ func main() {
 	}
 	mcpCmd.AddCommand(mcpDaemonCmd)
 
-	// MCP tools command group
-	mcpToolsCmd := &cobra.Command{
-		Use:   "tools",
-		Short: "Interact with MCP server tools",
-		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
-		},
-	}
-
-	// MCP tools health command
-	mcpToolsHealthCmd := &cobra.Command{
-		Use:   "health",
-		Short: "Check MCP server health",
-		Run: func(cmd *cobra.Command, args []string) {
-			if err := mcp.GetServerHealth(); err != nil {
-				logging.ErrorAndExit("Health check failed: %v", err)
-			}
-		},
-	}
-	mcpToolsCmd.AddCommand(mcpToolsHealthCmd)
-
-	// MCP tools list command
-	mcpToolsListCmd := &cobra.Command{
-		Use:   "list",
-		Short: "List available MCP tools",
-		Run: func(cmd *cobra.Command, args []string) {
-			if err := mcp.ListServerTools(); err != nil {
-				logging.ErrorAndExit("Failed to list tools: %v", err)
-			}
-		},
-	}
-	mcpToolsCmd.AddCommand(mcpToolsListCmd)
-
-	// MCP commands list command
-	mcpToolsCommandsCmd := &cobra.Command{
-		Use:   "commands",
-		Short: "List available MCP commands",
-		Run: func(cmd *cobra.Command, args []string) {
-			if err := mcp.ListServerCommands(); err != nil {
-				logging.ErrorAndExit("Failed to list commands: %v", err)
-			}
-		},
-	}
-	mcpToolsCmd.AddCommand(mcpToolsCommandsCmd)
-
-	// MCP execute command
-	mcpToolsExecuteCmd := &cobra.Command{
-		Use:   "execute [command] [args]",
-		Short: "Execute a command through MCP server",
-		Long: `Execute a command through the MCP server with arguments.
-Arguments can be provided in two ways:
-1. Named arguments in the format key=value
-2. Positional arguments in the order they are defined in the command configuration
-
-Supported value formats:
-- Strings: value or key=value
-- Numbers: 123 or key=123 (or 12.34 or key=12.34)
-- Booleans: true/false or key=true/key=false
-
-Examples:
-  interop mcp tools execute build-app
-  interop mcp tools execute build-app output.exe
-  interop mcp tools execute build-app output.exe ./src/main.go
-  interop mcp tools execute build-app version=1.0.0
-  interop mcp tools execute deploy-app environment=production force=true`,
-		Args: cobra.MinimumNArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			commandName := args[0]
-
-			// Get command configuration to determine defined arguments
-			cfg, err := settings.Load()
-			if err != nil {
-				logging.ErrorAndExit("Failed to load settings: %v", err)
-			}
-
-			// Get the command config to check for defined arguments
-			cmdConfig, exists := cfg.Commands[commandName]
-			if !exists {
-				logging.ErrorAndExit("Command '%s' not found", commandName)
-			}
-
-			// Parse arguments
-			cmdArgs := make(map[string]interface{})
-
-			// Track which positional index we're at
-			positionalIndex := 0
-
-			// Process each provided argument
-			for i := 1; i < len(args); i++ {
-				// Check if it's a named argument (key=value format)
-				if strings.Contains(args[i], "=") {
-					parts := strings.SplitN(args[i], "=", 2)
-					if len(parts) == 2 {
-						key := parts[0]
-						rawValue := parts[1]
-
-						// Process the value with type detection
-						parsedValue := parseArgumentValue(rawValue)
-						cmdArgs[key] = parsedValue
-					}
-				} else {
-					// It's a positional argument
-					// Check if we have a corresponding argument definition
-					if positionalIndex < len(cmdConfig.Arguments) {
-						argDef := cmdConfig.Arguments[positionalIndex]
-
-						// Process the value according to the defined type
-						parsedValue := parseArgumentValueWithType(args[i], argDef.Type)
-						cmdArgs[argDef.Name] = parsedValue
-
-						positionalIndex++
-					} else {
-						// More positional arguments than defined - warn user
-						logging.Warning("Ignoring extra positional argument: %s", args[i])
-					}
-				}
-			}
-
-			if err := mcp.ExecuteServerCommand(commandName, cmdArgs); err != nil {
-				logging.ErrorAndExit("Failed to execute command: %v", err)
-			}
-		},
-	}
-	mcpToolsCmd.AddCommand(mcpToolsExecuteCmd)
-
 	// MCP events command
 	mcpToolsEventsCmd := &cobra.Command{
 		Use:   "events",
@@ -327,10 +202,7 @@ Examples:
 			}
 		},
 	}
-	mcpToolsCmd.AddCommand(mcpToolsEventsCmd)
-
-	// Add tools command to MCP command group
-	mcpCmd.AddCommand(mcpToolsCmd)
+	mcpCmd.AddCommand(mcpToolsEventsCmd)
 
 	// Add MCP command group to root command
 	rootCmd.AddCommand(mcpCmd)
