@@ -84,15 +84,6 @@ func (s *Server) Start() error {
 	return nil
 }
 
-// loadSettings loads the settings file to get the port configuration
-func loadSettings() (*settings.Settings, error) {
-	cfg, err := settings.Load()
-	if err != nil {
-		return nil, err
-	}
-	return cfg, nil
-}
-
 // Stop terminates the MCP server
 func (s *Server) Stop() error {
 	pid, err := s.getPid()

@@ -51,11 +51,11 @@ func WithTimeout(timeout time.Duration) *Executor {
 
 // Run executes a command by name
 func Run(command CommandInfo, executablesPath string, projectPath ...string) error {
-	return RunWithSearchPaths(command, []string{executablesPath}, projectPath...)
+	return RunWithSearchPathsAndArgs(command, []string{executablesPath}, nil, projectPath...)
 }
 
-// RunWithSearchPaths executes a command, searching for executables in multiple paths
-func RunWithSearchPaths(command CommandInfo, executableSearchPaths []string, projectPath ...string) error {
+// RunWithSearchPathsAndArgs executes a command with arguments, searching for executables in multiple paths
+func RunWithSearchPathsAndArgs(command CommandInfo, executableSearchPaths []string, args []string, projectPath ...string) error {
 	if !command.IsEnabled {
 		return fmt.Errorf("command '%s' is not enabled", command.Name)
 	}
@@ -103,8 +103,14 @@ func RunWithSearchPaths(command CommandInfo, executableSearchPaths []string, pro
 	// Check if this command should run as a shell alias
 	if shell.IsAliasCommand(command.Cmd) {
 		// Run the alias using the shell package
-		logging.Message("Running shell alias: %s", command.Cmd)
-		commandToRun = userShell.ExecuteAlias(command.Cmd)
+		if args != nil && len(args) > 0 {
+			cmdWithArgs := fmt.Sprintf("%s %s", command.Cmd, strings.Join(args, " "))
+			logging.Message("Running shell alias with args: %s", cmdWithArgs)
+			commandToRun = userShell.ExecuteAlias(cmdWithArgs)
+		} else {
+			logging.Message("Running shell alias: %s", command.Cmd)
+			commandToRun = userShell.ExecuteAlias(command.Cmd)
+		}
 	} else if command.IsExecutable {
 		// For executable commands, look for the executable in all search paths
 		execPath, err := FindExecutable(command.Cmd, executableSearchPaths)
@@ -112,22 +118,39 @@ func RunWithSearchPaths(command CommandInfo, executableSearchPaths []string, pro
 			return err
 		}
 
-		logging.Message("Found executable '%s', executing", execPath)
-		commandToRun = exec.Command(execPath)
+		if args != nil && len(args) > 0 {
+			logging.Message("Found executable '%s', executing with args: %v", execPath, args)
+			commandToRun = exec.Command(execPath, args...)
+		} else {
+			logging.Message("Found executable '%s', executing", execPath)
+			commandToRun = exec.Command(execPath)
+		}
 	} else if shell.IsLocalScriptCommand(command.Cmd) {
 		// Local script that should be executed directly
-		scriptPath, args := shell.ParseLocalScript(command.Cmd)
-		logging.Message("Running local script: %s with arguments: %v", scriptPath, args)
+		scriptPath, scriptArgs := shell.ParseLocalScript(command.Cmd)
+
+		// Append additional arguments if provided
+		if args != nil && len(args) > 0 {
+			scriptArgs = append(scriptArgs, args...)
+		}
+
+		logging.Message("Running local script: %s with arguments: %v", scriptPath, scriptArgs)
 
 		var err error
-		commandToRun, err = userShell.ExecuteScript(scriptPath, args...)
+		commandToRun, err = userShell.ExecuteScript(scriptPath, scriptArgs...)
 		if err != nil {
 			return err
 		}
 	} else {
 		// Standard shell command
-		logging.Message("Running shell command: %s", command.Cmd)
-		commandToRun = userShell.ExecuteCommand(command.Cmd)
+		if args != nil && len(args) > 0 {
+			cmdWithArgs := fmt.Sprintf("%s %s", command.Cmd, strings.Join(args, " "))
+			logging.Message("Running shell command with args: %s", cmdWithArgs)
+			commandToRun = userShell.ExecuteCommand(cmdWithArgs)
+		} else {
+			logging.Message("Running shell command: %s", command.Cmd)
+			commandToRun = userShell.ExecuteCommand(command.Cmd)
+		}
 	}
 
 	// Set up the command to use the current terminal

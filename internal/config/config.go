@@ -84,20 +84,6 @@ func (m *Manager) EnsureConfigDirectories() error {
 	return nil
 }
 
-// GetExecutablesPath returns the path to the executables directory
-func (m *Manager) GetExecutablesPath() (string, error) {
-	root, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get user home directory: %w", err)
-	}
-
-	config := filepath.Join(root, m.PathConfig.SettingsDir)
-	base := filepath.Join(config, m.PathConfig.AppDir)
-	execDir := filepath.Join(base, m.PathConfig.ExecutablesDir)
-
-	return execDir, nil
-}
-
 // ParseFromFile parses the configuration file into the provided data structure
 func (m *Manager) ParseFromFile(path string, data interface{}) error {
 	_, err := toml.DecodeFile(path, data)
@@ -141,14 +127,4 @@ func (m *Manager) EnsureConfigFile(defaultConfig interface{}) (string, error) {
 	}
 
 	return path, nil
-}
-
-// LoadOrCreate loads the configuration from file or creates a new one with defaults
-func (m *Manager) LoadOrCreate(config interface{}, defaultConfig interface{}) error {
-	path, err := m.EnsureConfigFile(defaultConfig)
-	if err != nil {
-		return err
-	}
-
-	return m.ParseFromFile(path, config)
 }

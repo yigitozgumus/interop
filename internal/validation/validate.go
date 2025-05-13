@@ -134,6 +134,11 @@ func ResolveCommand(cfg *settings.Settings, nameOrAlias string) (*CommandReferen
 
 // ExecuteCommand validates the configuration, resolves and executes a command by name or alias
 func ExecuteCommand(cfg *settings.Settings, nameOrAlias string) error {
+	return ExecuteCommandWithArgs(cfg, nameOrAlias, nil)
+}
+
+// ExecuteCommandWithArgs validates the configuration, resolves and executes a command by name or alias with arguments
+func ExecuteCommandWithArgs(cfg *settings.Settings, nameOrAlias string, args []string) error {
 	// First validate all commands
 	validationErrors := ValidateCommands(cfg)
 	for _, err := range validationErrors {
@@ -175,6 +180,6 @@ func ExecuteCommand(cfg *settings.Settings, nameOrAlias string) error {
 		return err
 	}
 
-	// Execute the command
-	return cmd.Run()
+	// Execute the command with arguments
+	return cmd.RunWithArgs(args)
 }

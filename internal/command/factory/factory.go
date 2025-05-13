@@ -178,13 +178,26 @@ func (f *Factory) createExecutableCommand(name string, config settings.CommandCo
 	}, nil
 }
 
-// Run executes the command
-func (c *Command) Run() error {
+// RunWithArgs executes the command with additional arguments
+func (c *Command) RunWithArgs(args []string) error {
 	// Set up command execution
 	cmd := &execution.Command{
 		Path: c.Path,
 		Args: c.Args,
 		Dir:  c.Dir,
+	}
+
+	// Add additional arguments if provided
+	if c.Type == ExecutableCommand && args != nil && len(args) > 0 {
+		// For executable commands, add arguments directly
+		cmd.Args = append(cmd.Args, args...)
+	} else if c.Type == ShellCommand && args != nil && len(args) > 0 {
+		// For shell commands, the command is in Args[1]
+		if len(cmd.Args) >= 2 {
+			// Format the command with arguments
+			commandWithArgs := fmt.Sprintf("%s %s", cmd.Args[1], strings.Join(args, " "))
+			cmd.Args[1] = commandWithArgs
+		}
 	}
 
 	// Run the command

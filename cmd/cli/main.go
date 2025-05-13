@@ -85,14 +85,15 @@ func main() {
 
 	// New run command that supports both command names and aliases
 	runCmd := &cobra.Command{
-		Use:   "run [command-or-alias]",
-		Short: "Execute a command by name or alias",
-		Args:  cobra.ExactArgs(1),
+		Use:   "run [command-or-alias] [args...]",
+		Short: "Execute a command by name or alias with optional arguments",
+		Args:  cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			commandOrAlias := args[0]
+			commandArgs := args[1:]
 
-			// Validate configuration and run the command
-			err := validation.ExecuteCommand(cfg, commandOrAlias)
+			// Validate configuration and run the command with arguments
+			err := validation.ExecuteCommandWithArgs(cfg, commandOrAlias, commandArgs)
 			if err != nil {
 				logging.ErrorAndExit("Failed to run '%s': %v", commandOrAlias, err)
 			}
