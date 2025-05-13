@@ -21,13 +21,14 @@ import (
 
 // MCPLibServer represents the MCP server implementation using mark3labs/mcp-go
 type MCPLibServer struct {
-	mcpServer     *server.MCPServer
-	sseServer     *server.SSEServer
-	httpServer    *http.Server
-	port          int
-	configDir     string
-	logFile       *os.File
-	commandConfig map[string]settings.CommandConfig
+	mcpServer      *server.MCPServer
+	sseServer      *server.SSEServer
+	httpServer     *http.Server
+	port           int
+	configDir      string
+	logFile        *os.File
+	commandConfig  map[string]settings.CommandConfig
+	commandAliases map[string]string // Maps alias -> original command name
 }
 
 // sanitizeOutput ensures there are no ANSI color codes in the output
@@ -95,12 +96,13 @@ func NewMCPLibServer() (*MCPLibServer, error) {
 	sseServer := server.NewSSEServer(mcpServer, server.WithBaseURL(fmt.Sprintf("http://localhost:%d", port)))
 
 	s := &MCPLibServer{
-		mcpServer:     mcpServer,
-		sseServer:     sseServer,
-		port:          port,
-		configDir:     configDir,
-		logFile:       logFile,
-		commandConfig: cfg.Commands,
+		mcpServer:      mcpServer,
+		sseServer:      sseServer,
+		port:           port,
+		configDir:      configDir,
+		logFile:        logFile,
+		commandConfig:  cfg.Commands,
+		commandAliases: make(map[string]string),
 	}
 
 	// Register tools based on available commands
@@ -114,99 +116,54 @@ func NewMCPLibServer() (*MCPLibServer, error) {
 
 // registerCommandTools converts the available commands to MCP tools
 func (s *MCPLibServer) registerCommandTools() {
+	// Map to track registered commands to avoid duplicates
+	registeredTools := make(map[string]bool)
+
+	// First, register all regular commands
 	for name, cmd := range s.commandConfig {
 		if !cmd.IsEnabled {
 			continue
 		}
 
-		// Create tool options
-		toolOptions := []mcp.ToolOption{
-			mcp.WithDescription(cmd.Description),
+		// Register the main command
+		s.registerSingleCommandTool(name, cmd)
+		registeredTools[name] = true
+	}
+
+	// Now register aliases from projects
+	cfg, err := settings.Load()
+	if err == nil {
+		for _, project := range cfg.Projects {
+			for _, cmdAlias := range project.Commands {
+				// Skip if command doesn't have an alias
+				if cmdAlias.Alias == "" {
+					continue
+				}
+
+				// Find the original command
+				cmd, exists := s.commandConfig[cmdAlias.CommandName]
+				if !exists || !cmd.IsEnabled {
+					s.logInfo("Skipping alias %s for command %s (command not found or disabled)",
+						cmdAlias.Alias, cmdAlias.CommandName)
+					continue
+				}
+
+				// Skip if this alias is already a registered command name
+				if _, exists := registeredTools[cmdAlias.Alias]; exists {
+					s.logInfo("Skipping alias %s for command %s (conflicts with existing command)",
+						cmdAlias.Alias, cmdAlias.CommandName)
+					continue
+				}
+
+				// Register the alias as a tool that points to the same command
+				s.registerSingleCommandTool(cmdAlias.Alias, cmd)
+				s.logInfo("Registered alias %s for command %s", cmdAlias.Alias, cmdAlias.CommandName)
+				registeredTools[cmdAlias.Alias] = true
+
+				// Store the alias mapping
+				s.commandAliases[cmdAlias.Alias] = cmdAlias.CommandName
+			}
 		}
-
-		if len(cmd.Arguments) > 0 {
-			for _, arg := range cmd.Arguments {
-				description := arg.Description
-				if arg.Type != settings.ArgumentTypeString {
-					description = fmt.Sprintf("%s (type: %s)", description, arg.Type)
-				}
-
-				toolOptions = append(toolOptions,
-					mcp.WithString(arg.Name, mcp.Description(description)),
-				)
-			}
-		} else {
-			// For backward compatibility, keep the old 'args' parameter
-			toolOptions = append(toolOptions,
-				mcp.WithObject("args", mcp.Description("Optional arguments for the command")),
-			)
-		}
-
-		// Create the tool with all options
-		tool := mcp.NewTool(name, toolOptions...)
-
-		// Store the command in a local variable to avoid closure issues
-		cmdConfig := cmd
-		cmdName := name
-
-		// Add the tool handler
-		s.mcpServer.AddTool(tool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			// Handle arguments according to how they were defined
-			var args map[string]interface{}
-			if len(cmdConfig.Arguments) > 0 {
-				// For commands with defined arguments, extract each from the request
-				args = make(map[string]interface{})
-				for _, arg := range cmdConfig.Arguments {
-					if value, ok := request.Params.Arguments[arg.Name]; ok {
-						// Convert values based on the expected type
-						switch arg.Type {
-						case settings.ArgumentTypeNumber:
-							// Try to convert string to number if needed
-							if strVal, ok := value.(string); ok {
-								if numVal, err := strconv.ParseFloat(strVal, 64); err == nil {
-									args[arg.Name] = numVal
-								} else {
-									args[arg.Name] = value
-								}
-							} else {
-								args[arg.Name] = value
-							}
-						case settings.ArgumentTypeBool:
-							// Try to convert string to bool if needed
-							if strVal, ok := value.(string); ok {
-								if boolVal, err := strconv.ParseBool(strVal); err == nil {
-									args[arg.Name] = boolVal
-								} else {
-									args[arg.Name] = value
-								}
-							} else {
-								args[arg.Name] = value
-							}
-						default:
-							args[arg.Name] = value
-						}
-					}
-				}
-			} else {
-				// For legacy commands, use the 'args' object if provided
-				if rawArgs, ok := request.Params.Arguments["args"]; ok {
-					if argsMap, ok := rawArgs.(map[string]interface{}); ok {
-						args = argsMap
-					}
-				}
-			}
-
-			// Execute the command
-			result, err := s.executeCommand(cmdName, cmdConfig.Cmd, args)
-			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Command execution failed: %v", err)), nil
-			}
-
-			// Return the sanitized result
-			return mcp.NewToolResultText(sanitizeOutput(result)), nil
-		})
-
-		s.logInfo("Registered MCP tool for command: %s", name)
 	}
 
 	// Add a special commands tool that lists available commands
@@ -232,49 +189,6 @@ func (s *MCPLibServer) registerCommandTools() {
 	})
 
 	s.logInfo("Registered MCP commands tool")
-
-	// // Add a cursor-specific tool for better integration
-	// cursorTool := mcp.NewTool(
-	// 	"cursor",
-	// 	mcp.WithDescription("Execute operations specifically for Cursor integration"),
-	// 	mcp.WithString("operation",
-	// 		mcp.Description("The operation to perform (get_tools, get_status)"),
-	// 	),
-	// )
-
-	// s.mcpServer.AddTool(cursorTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// 	// Extract operation from request
-	// 	operation := ""
-	// 	if opValue, ok := request.Params.Arguments["operation"]; ok {
-	// 		if opStr, ok := opValue.(string); ok {
-	// 			operation = opStr
-	// 		}
-	// 	}
-
-	// 	// Handle different operations
-	// 	switch operation {
-	// 	case "get_tools":
-	// 		// Return list of tools as text format
-	// 		tools := s.GetToolNames()
-	// 		result := "Available tools:\n"
-	// 		for _, tool := range tools {
-	// 			result += "- " + tool + "\n"
-	// 		}
-	// 		return mcp.NewToolResultText(sanitizeOutput(result)), nil
-
-	// 	case "get_status":
-	// 		// Return server status as text
-	// 		result := fmt.Sprintf("Server status: ready\nTools count: %d\nStarted at: %s",
-	// 			len(s.GetToolNames()),
-	// 			time.Now().Format(time.RFC3339))
-	// 		return mcp.NewToolResultText(sanitizeOutput(result)), nil
-
-	// 	default:
-	// 		return mcp.NewToolResultError(fmt.Sprintf("Unknown cursor operation: %s", operation)), nil
-	// 	}
-	// })
-
-	// s.logInfo("Registered cursor tool for Cursor IDE integration")
 
 	// Add a simple ping tool that responds with pong - often expected by clients
 	pingTool := mcp.NewTool(
@@ -311,17 +225,112 @@ func (s *MCPLibServer) registerCommandTools() {
 	s.logInfo("Registered echo tool")
 }
 
+// registerSingleCommandTool registers a single command as an MCP tool
+func (s *MCPLibServer) registerSingleCommandTool(name string, cmdConfig settings.CommandConfig) {
+	// Create tool options
+	toolOptions := []mcp.ToolOption{
+		mcp.WithDescription(cmdConfig.Description),
+	}
+
+	if len(cmdConfig.Arguments) > 0 {
+		for _, arg := range cmdConfig.Arguments {
+			description := arg.Description
+			if arg.Type != settings.ArgumentTypeString {
+				description = fmt.Sprintf("%s (type: %s)", description, arg.Type)
+			}
+
+			toolOptions = append(toolOptions,
+				mcp.WithString(arg.Name, mcp.Description(description)),
+			)
+		}
+	} else {
+		// For backward compatibility, keep the old 'args' parameter
+		toolOptions = append(toolOptions,
+			mcp.WithObject("args", mcp.Description("Optional arguments for the command")),
+		)
+	}
+
+	// Create the tool with all options
+	tool := mcp.NewTool(name, toolOptions...)
+
+	// Add the tool handler
+	s.mcpServer.AddTool(tool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		// Handle arguments according to how they were defined
+		var args map[string]interface{}
+		if len(cmdConfig.Arguments) > 0 {
+			// For commands with defined arguments, extract each from the request
+			args = make(map[string]interface{})
+			for _, arg := range cmdConfig.Arguments {
+				if value, ok := request.Params.Arguments[arg.Name]; ok {
+					// Convert values based on the expected type
+					switch arg.Type {
+					case settings.ArgumentTypeNumber:
+						// Try to convert string to number if needed
+						if strVal, ok := value.(string); ok {
+							if numVal, err := strconv.ParseFloat(strVal, 64); err == nil {
+								args[arg.Name] = numVal
+							} else {
+								args[arg.Name] = value
+							}
+						} else {
+							args[arg.Name] = value
+						}
+					case settings.ArgumentTypeBool:
+						// Try to convert string to bool if needed
+						if strVal, ok := value.(string); ok {
+							if boolVal, err := strconv.ParseBool(strVal); err == nil {
+								args[arg.Name] = boolVal
+							} else {
+								args[arg.Name] = value
+							}
+						} else {
+							args[arg.Name] = value
+						}
+					default:
+						args[arg.Name] = value
+					}
+				}
+			}
+		} else {
+			// For legacy commands, use the 'args' object if provided
+			if rawArgs, ok := request.Params.Arguments["args"]; ok {
+				if argsMap, ok := rawArgs.(map[string]interface{}); ok {
+					args = argsMap
+				}
+			}
+		}
+
+		// Execute the command - use the actual command name from settings
+		result, err := s.executeCommand(name, cmdConfig.Cmd, args)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Command execution failed: %v", err)), nil
+		}
+
+		// Return the sanitized result
+		return mcp.NewToolResultText(sanitizeOutput(result)), nil
+	})
+
+	s.logInfo("Registered MCP tool for command: %s", name)
+}
+
 // executeCommand runs a command and returns its output
 func (s *MCPLibServer) executeCommand(name, cmdStr string, args map[string]interface{}) (string, error) {
-	// Get the command from config
-	cmdConfig, exists := s.commandConfig[name]
+	// Check if the command is an alias, and if so use the original command name
+	originalName := name
+	if aliasTarget, isAlias := s.commandAliases[name]; isAlias {
+		originalName = aliasTarget
+		s.logInfo("Command %s is an alias for %s", name, originalName)
+	}
+
+	// Get the command from config using the original name
+	cmdConfig, exists := s.commandConfig[originalName]
 	if !exists {
-		return "", fmt.Errorf("command '%s' not found", name)
+		return "", fmt.Errorf("command '%s' not found", originalName)
 	}
 
 	// Check if command is enabled
 	if !cmdConfig.IsEnabled {
-		return "", fmt.Errorf("command '%s' is disabled", name)
+		return "", fmt.Errorf("command '%s' is disabled", originalName)
 	}
 
 	// Validate arguments if defined
@@ -333,6 +342,30 @@ func (s *MCPLibServer) executeCommand(name, cmdStr string, args map[string]inter
 
 	// Create a copy of the command string for substitution
 	processedCmd := cmdStr
+
+	// Check if command has a project context
+	var projectPath string
+
+	// If no project path in args, try to find the associated project
+	if projectPath == "" {
+		cfg, err := settings.Load()
+		if err == nil {
+			// Look through all projects to find if this command is associated with one
+			for _, project := range cfg.Projects {
+				for _, cmd := range project.Commands {
+					if cmd.CommandName == originalName || cmd.Alias == originalName {
+						// Found the project this command belongs to
+						projectPath = project.Path
+						s.logInfo("Found project binding for command %s: %s", originalName, projectPath)
+						break
+					}
+				}
+				if projectPath != "" {
+					break
+				}
+			}
+		}
+	}
 
 	// First pass: replace argument placeholders with their values
 	for _, argDef := range cmdConfig.Arguments {
@@ -387,7 +420,7 @@ func (s *MCPLibServer) executeCommand(name, cmdStr string, args map[string]inter
 		processedCmd = strings.ReplaceAll(processedCmd, placeholder, valueStr)
 	}
 
-	s.logInfo("Executing command: %s (%s)", name, processedCmd)
+	s.logInfo("Executing command: %s (%s)", originalName, processedCmd)
 
 	// Create a temporary file for output
 	tmpDir, err := os.MkdirTemp(s.configDir, "cmd-output-*")
@@ -403,8 +436,18 @@ func (s *MCPLibServer) executeCommand(name, cmdStr string, args map[string]inter
 	}
 	defer outFile.Close()
 
+	// Prepare the command based on project context
+	var executeCmd string
+	if projectPath != "" {
+		// If project path is provided, add directory change before and after
+		executeCmd = fmt.Sprintf("cd %s && %s && cd -", projectPath, processedCmd)
+		s.logInfo("Running command in project directory: %s", projectPath)
+	} else {
+		executeCmd = processedCmd
+	}
+
 	// Execute command
-	cmd := exec.Command("sh", "-c", processedCmd)
+	cmd := exec.Command("sh", "-c", executeCmd)
 	cmd.Stdout = outFile
 	cmd.Stderr = outFile
 
