@@ -57,7 +57,7 @@ func Run(command CommandInfo, executablesPath string, projectPath ...string) err
 // RunWithSearchPathsAndArgs executes a command with arguments, searching for executables in multiple paths
 func RunWithSearchPathsAndArgs(command CommandInfo, executableSearchPaths []string, args []string, projectPath ...string) error {
 	if !command.IsEnabled {
-		return fmt.Errorf("command '%s' is not enabled", command.Name)
+		logging.Error("command '%s' is not enabled", command.Name)
 	}
 
 	logging.Message("Command '%s' is enabled, proceeding with execution", command.Name)
@@ -71,19 +71,19 @@ func RunWithSearchPathsAndArgs(command CommandInfo, executableSearchPaths []stri
 		// Save current directory to return to after command execution
 		currentDir, err = os.Getwd()
 		if err != nil {
-			return fmt.Errorf("failed to get current working directory: %w", err)
+			logging.Error("failed to get current working directory: %w", err)
 		}
 
 		projectDir := projectPath[0]
 		// If path doesn't exist, try to report a more helpful error
 		if _, err := os.Stat(projectDir); os.IsNotExist(err) {
-			return fmt.Errorf("project directory doesn't exist: %s", projectDir)
+			logging.Error("project directory doesn't exist: %s", projectDir)
 		}
 
 		// Change to project directory
 		logging.Message("Changing to project directory: %s", projectDir)
 		if err := os.Chdir(projectDir); err != nil {
-			return fmt.Errorf("failed to change to project directory: %w", err)
+			logging.Error("failed to change to project directory: %w", err)
 		}
 
 		// Ensure we change back to original directory when done
@@ -97,11 +97,13 @@ func RunWithSearchPathsAndArgs(command CommandInfo, executableSearchPaths []stri
 
 	// Get user's shell
 	userShell := shell.GetUserShell()
+	logging.Message("User shell: %s", userShell)
 
 	var commandToRun *exec.Cmd
 
 	// Check if this command should run as a shell alias
 	if shell.IsAliasCommand(command.Cmd) {
+		logging.Message("Running shell alias: %s", command.Cmd)
 		// Run the alias using the shell package
 		if args != nil && len(args) > 0 {
 			cmdWithArgs := fmt.Sprintf("%s %s", command.Cmd, strings.Join(args, " "))
@@ -193,6 +195,14 @@ func (e *Executor) Execute(cmd *Command) error {
 // ExecuteWithContext runs the command with the provided context
 func (e *Executor) ExecuteWithContext(ctx context.Context, cmd *Command) error {
 	logging.Message("Executing command: %s %s", cmd.Path, strings.Join(cmd.Args, " "))
+
+	if cmd.Dir != "" {
+		logging.Message("Working directory: %s", cmd.Dir)
+		// Check if directory exists
+		if _, err := os.Stat(cmd.Dir); os.IsNotExist(err) {
+			return errors.NewExecutionError(fmt.Sprintf("Working directory does not exist: %s", cmd.Dir), err)
+		}
+	}
 
 	// Create the command with context
 	execCmd := exec.CommandContext(ctx, cmd.Path, cmd.Args...)

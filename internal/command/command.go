@@ -127,20 +127,6 @@ func ListWithProjects(commands map[string]Command, projectCommands map[string][]
 	}
 }
 
-// Run executes a command by name
-func Run(commands map[string]Command, commandName string, executablesPath string, projectPath ...string) error {
-	return RunWithArgs(commands, commandName, nil, executablesPath, projectPath...)
-}
-
-// RunWithArgs executes a command by name with the provided arguments
-func RunWithArgs(commands map[string]Command, commandName string, args []string, executablesPath string, projectPath ...string) error {
-	return RunWithSearchPathsAndArgs(commands, commandName, []string{executablesPath}, args, projectPath...)
-}
-
-// RunWithSearchPaths executes a command by name, searching for executables in multiple paths
-func RunWithSearchPaths(commands map[string]Command, commandName string, executableSearchPaths []string, projectPath ...string) error {
-	return RunWithSearchPathsAndArgs(commands, commandName, executableSearchPaths, nil, projectPath...)
-}
 
 // RunWithSearchPathsAndArgs executes a command by name with arguments, searching for executables in multiple paths
 func RunWithSearchPathsAndArgs(commands map[string]Command, commandName string, executableSearchPaths []string, args []string, projectPath ...string) error {

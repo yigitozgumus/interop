@@ -5,6 +5,7 @@ import (
 	"interop/internal/command/factory"
 	"interop/internal/errors"
 	"interop/internal/execution"
+	"interop/internal/logging"
 	"interop/internal/settings"
 	"interop/internal/shell"
 	"interop/internal/validation/project"
@@ -152,6 +153,7 @@ func ExecuteCommandWithArgs(cfg *settings.Settings, nameOrAlias string, args []s
 	if err != nil {
 		return err
 	}
+	logging.Message("Command reference: %v", cmdRef)
 
 	// Get shell info
 	shellInfo, err := shell.DetectShell()

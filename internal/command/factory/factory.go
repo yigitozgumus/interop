@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"interop/internal/errors"
 	"interop/internal/execution"
+	"interop/internal/logging"
 	"interop/internal/settings"
 	"interop/internal/shell"
 	"os"
@@ -73,6 +74,7 @@ func (f *Factory) Create(cmdName string, projectPath string) (*Command, error) {
 	if cmdConfig.IsExecutable {
 		return f.createExecutableCommand(cmdName, cmdConfig, projectPath)
 	}
+	logging.Message("Creating shell command: %s", cmdName)
 
 	return f.createShellCommand(cmdName, cmdConfig, projectPath)
 }
@@ -129,6 +131,7 @@ func (f *Factory) CreateFromAlias(projectName string, alias string) (*Command, e
 	} else if !filepath.IsAbs(projectPath) {
 		projectPath = filepath.Join(homeDir, projectPath)
 	}
+	logging.Message("Project path: %s", projectPath)
 
 	// Create the command
 	return f.Create(cmdName, projectPath)
@@ -180,6 +183,7 @@ func (f *Factory) createExecutableCommand(name string, config settings.CommandCo
 
 // RunWithArgs executes the command with additional arguments
 func (c *Command) RunWithArgs(args []string) error {
+	logging.Message("Running command: %s with args: %v in directory: %s", c.Name, args, c.Dir)
 	// Set up command execution
 	cmd := &execution.Command{
 		Path: c.Path,
