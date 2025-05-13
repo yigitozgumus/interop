@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"interop/internal/command"
+	"interop/internal/display"
 	"interop/internal/edit"
 	"interop/internal/logging"
 	"interop/internal/mcp"
@@ -212,6 +213,9 @@ func main() {
 		Use:   "validate",
 		Short: "Validate the configuration file",
 		Run: func(cmd *cobra.Command, args []string) {
+			// Show command graph visualization first
+			display.PrintCommandGraph(cfg)
+
 			// Validate commands using existing functionality
 			cmdErrors := validation.ValidateCommands(cfg)
 
@@ -240,11 +244,11 @@ func main() {
 			}
 
 			if len(allErrors) == 0 {
-				fmt.Println("✅ Configuration is valid!")
+				fmt.Println("\n✅ Configuration is valid!")
 				return
 			}
 
-			fmt.Println("⚠️ Configuration validation issues:")
+			fmt.Println("\n⚠️ Configuration validation issues:")
 			fmt.Println("==================================")
 			fmt.Println()
 
