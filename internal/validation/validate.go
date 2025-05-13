@@ -92,45 +92,50 @@ func ValidateCommands(cfg *settings.Settings) []ValidationError {
 // ResolveCommand finds a command by name or alias
 // Returns the command reference and a potential error
 func ResolveCommand(cfg *settings.Settings, nameOrAlias string) (*CommandReference, error) {
-	// First check if it's a global command
-	if cmd, ok := cfg.Commands[nameOrAlias]; ok {
-		return &CommandReference{
-			Type:    GlobalCommand,
-			Command: cmd,
-			Name:    nameOrAlias,
-		}, nil
-	}
-
-	// Then check if it's a project command or alias
-	for projectName, projectData := range cfg.Projects {
-		for _, alias := range projectData.Commands {
-			// Check if it matches the command name
-			if alias.CommandName == nameOrAlias && alias.Alias == "" {
-				if cmd, ok := cfg.Commands[alias.CommandName]; ok {
-					return &CommandReference{
-						Type:        ProjectCommand,
-						Command:     cmd,
-						ProjectName: projectName,
-						Name:        nameOrAlias,
-					}, nil
+	// Check if command exists in global commands
+	cmd, cmdExists := cfg.Commands[nameOrAlias]
+	if !cmdExists {
+		// If command doesn't exist at all, check aliases and return error if not found
+		for projectName, projectData := range cfg.Projects {
+			for _, alias := range projectData.Commands {
+				// Check if it matches an alias
+				if alias.Alias == nameOrAlias {
+					if cmd, ok := cfg.Commands[alias.CommandName]; ok {
+						return &CommandReference{
+							Type:        AliasCommand,
+							Command:     cmd,
+							ProjectName: projectName,
+							Name:        nameOrAlias,
+						}, nil
+					}
 				}
 			}
+		}
+		return nil, errors.NewCommandError(fmt.Sprintf("Command or alias '%s' not found", nameOrAlias), nil, true)
+	}
 
-			// Check if it matches an alias
-			if alias.Alias == nameOrAlias {
-				if cmd, ok := cfg.Commands[alias.CommandName]; ok {
-					return &CommandReference{
-						Type:        AliasCommand,
-						Command:     cmd,
-						ProjectName: projectName,
-						Name:        nameOrAlias,
-					}, nil
-				}
+	// Check if command is bound to any project with its original name (no alias)
+	for projectName, projectData := range cfg.Projects {
+		for _, alias := range projectData.Commands {
+			if alias.CommandName == nameOrAlias && alias.Alias == "" {
+				// Found the command in a project with its original name, so it's a project command
+				return &CommandReference{
+					Type:        ProjectCommand,
+					Command:     cmd,
+					ProjectName: projectName,
+					Name:        nameOrAlias,
+				}, nil
 			}
 		}
 	}
 
-	return nil, errors.NewCommandError(fmt.Sprintf("Command or alias '%s' not found", nameOrAlias), nil, true)
+	// If command exists in global commands and wasn't found in any project with original name,
+	// it's a global command
+	return &CommandReference{
+		Type:    GlobalCommand,
+		Command: cmd,
+		Name:    nameOrAlias,
+	}, nil
 }
 
 // ExecuteCommand validates the configuration, resolves and executes a command by name or alias
@@ -170,6 +175,7 @@ func ExecuteCommandWithArgs(cfg *settings.Settings, nameOrAlias string, args []s
 
 	// If it's a project command or alias, we need to create it with the project path
 	var cmd *factory.Command
+	logging.Message("Project name: %s", cmdRef.ProjectName)
 	if cmdRef.ProjectName != "" {
 		// For project commands, use CreateFromAlias
 		cmd, err = commandFactory.CreateFromAlias(cmdRef.ProjectName, nameOrAlias)
