@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"interop/internal/logging"
+	"interop/internal/settings"
 	"os"
 	"os/signal"
 	"syscall"
@@ -83,6 +84,7 @@ func RestartServer(serverName string, all bool) error {
 }
 
 // GetStatus returns the status of the MCP server with support for multiple servers
+// By default it shows status for all servers
 func GetStatus(serverName string, all bool) (string, error) {
 	manager, err := NewServerManager()
 	if err != nil {
@@ -255,4 +257,35 @@ func RunHTTPServer() error {
 	}
 
 	return nil
+}
+
+// CheckPortAvailability checks if the configured MCP server ports are available
+func CheckPortAvailability() (string, error) {
+	cfg, err := settings.Load()
+	if err != nil {
+		return "", fmt.Errorf("failed to load settings: %v", err)
+	}
+
+	result := "MCP Ports Availability Check:\n"
+	result += "============================\n\n"
+
+	// Check default port
+	result += fmt.Sprintf("Default port %d: ", cfg.MCPPort)
+	if IsPortAvailable(cfg.MCPPort) {
+		result += "Available\n"
+	} else {
+		result += "In use (possibly by the MCP server or another process)\n"
+	}
+
+	// Check configured server ports
+	for name, server := range cfg.MCPServers {
+		result += fmt.Sprintf("\nServer '%s' port %d: ", name, server.Port)
+		if IsPortAvailable(server.Port) {
+			result += "Available\n"
+		} else {
+			result += "In use (possibly by the MCP server or another process)\n"
+		}
+	}
+
+	return result, nil
 }

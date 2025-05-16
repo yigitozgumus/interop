@@ -193,7 +193,7 @@ func main() {
 	mcpStatusCmd := &cobra.Command{
 		Use:   "status [server-name]",
 		Short: "Get the status of an MCP server or all servers",
-		Long:  "Get the status of the default MCP server, a specific named server, or all servers",
+		Long:  "Get the status of all MCP servers by default, or a specific named server if provided",
 		Run: func(cmd *cobra.Command, args []string) {
 			// If server name is provided as an argument, override the flag
 			if len(args) > 0 {
@@ -207,7 +207,7 @@ func main() {
 			fmt.Println(status)
 		},
 	}
-	mcpStatusCmd.Flags().BoolVarP(&allServers, "all", "a", false, "Get status of all MCP servers")
+	mcpStatusCmd.Flags().BoolVarP(&allServers, "all", "a", true, "Get status of all MCP servers (default)")
 	mcpStatusCmd.Flags().StringVarP(&serverName, "server", "s", "", "Specific MCP server to get status for")
 	mcpCmd.AddCommand(mcpStatusCmd)
 
@@ -270,6 +270,21 @@ func main() {
 	}
 	mcpToolsEventsCmd.Flags().StringVarP(&serverName, "server", "s", "", "Specific MCP server to stream events from")
 	mcpCmd.AddCommand(mcpToolsEventsCmd)
+
+	// MCP port-check command
+	mcpPortCheckCmd := &cobra.Command{
+		Use:   "port-check",
+		Short: "Check if MCP server ports are available",
+		Long:  "Check if the configured MCP server ports are available or in use by other processes",
+		Run: func(cmd *cobra.Command, args []string) {
+			result, err := mcp.CheckPortAvailability()
+			if err != nil {
+				logging.ErrorAndExit("Failed to check port availability: %v", err)
+			}
+			fmt.Println(result)
+		},
+	}
+	mcpCmd.AddCommand(mcpPortCheckCmd)
 
 	// Add MCP command group to root command
 	rootCmd.AddCommand(mcpCmd)

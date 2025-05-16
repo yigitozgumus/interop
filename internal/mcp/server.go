@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"interop/internal/logging"
 	"interop/internal/settings"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -225,6 +226,16 @@ func (s *Server) IsRunning() bool {
 	return err == nil
 }
 
+// IsPortAvailable checks if a port is available for use
+func IsPortAvailable(port int) bool {
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return false
+	}
+	ln.Close()
+	return true
+}
+
 // Status returns the current status of the MCP server
 func (s *Server) Status() string {
 	if s.IsRunning() {
@@ -235,8 +246,17 @@ func (s *Server) Status() string {
 			serverType = fmt.Sprintf("MCP server '%s'", s.Name)
 		}
 
-		return fmt.Sprintf("%s is running (PID: %d)\nHTTP server available at http://localhost:%d",
-			serverType, pid, s.Port)
+		portStatus := "Port available: Yes"
+		if !IsPortAvailable(s.Port) {
+			if pid > 0 {
+				portStatus = "Port in use by this server"
+			} else {
+				portStatus = "Port in use by another process"
+			}
+		}
+
+		return fmt.Sprintf("%s is running (PID: %d)\nHTTP server available at http://localhost:%d\n%s",
+			serverType, pid, s.Port, portStatus)
 	}
 
 	serverType := "MCP server"
@@ -244,7 +264,12 @@ func (s *Server) Status() string {
 		serverType = fmt.Sprintf("MCP server '%s'", s.Name)
 	}
 
-	return fmt.Sprintf("%s is not running", serverType)
+	portStatus := "Port available: Yes"
+	if !IsPortAvailable(s.Port) {
+		portStatus = "Port available: No (in use by another process)"
+	}
+
+	return fmt.Sprintf("%s is not running\n%s", serverType, portStatus)
 }
 
 // getPid reads the PID from the PID file
