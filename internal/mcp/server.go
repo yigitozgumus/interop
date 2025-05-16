@@ -349,30 +349,30 @@ func (m *ServerManager) RestartServer(name string, all bool) error {
 
 // GetStatus returns the status of a specific MCP server or all servers
 func (m *ServerManager) GetStatus(name string, all bool) string {
-	if all {
-		// Get status of all servers
-		status := "MCP Servers Status:\n"
-		status += "=====================\n"
+	// If a specific server is requested, only show that one
+	if name != "" {
+		server, exists := m.Servers[name]
+		if !exists {
+			return fmt.Sprintf("MCP server '%s' not found", name)
+		}
+		return server.Status()
+	}
 
-		for serverName, server := range m.Servers {
+	// By default or if all flag is set, show all servers
+	status := "MCP Servers Status:\n"
+	status += "=====================\n"
+
+	// First show default server
+	status += fmt.Sprintf("\n[default]\n%s\n", m.Servers["default"].Status())
+
+	// Then show all other servers
+	for serverName, server := range m.Servers {
+		if serverName != "default" {
 			status += fmt.Sprintf("\n[%s]\n%s\n", serverName, server.Status())
 		}
-
-		return status
 	}
 
-	// Get status of a specific server
-	if name == "" {
-		// Default server
-		return m.Servers["default"].Status()
-	}
-
-	server, exists := m.Servers[name]
-	if !exists {
-		return fmt.Sprintf("MCP server '%s' not found", name)
-	}
-
-	return server.Status()
+	return status
 }
 
 // ListMCPServers returns a list of configured MCP servers with their details
@@ -430,28 +430,24 @@ func (m *ServerManager) ExportMCPConfig() (string, error) {
 		return "", fmt.Errorf("failed to load settings: %v", err)
 	}
 
-	// Create a map with the relevant configuration
-	config := map[string]interface{}{
-		"mcp_port":    cfg.MCPPort,
-		"mcp_servers": cfg.MCPServers,
+	// Create output format with the required naming convention
+	servers := make(map[string]map[string]string)
+
+	// Add default server
+	servers["default-interopMCPServer"] = map[string]string{
+		"url": fmt.Sprintf("http://localhost:%d/sse", cfg.MCPPort),
 	}
 
-	// Add commands with their MCP assignments
-	cmdConfig := make(map[string]map[string]string)
-	for name, cmd := range cfg.Commands {
-		if cmd.MCP != "" {
-			cmdConfig[name] = map[string]string{
-				"mcp": cmd.MCP,
-			}
+	// Add all configured MCP servers
+	for name, mcpServer := range cfg.MCPServers {
+		serverKey := fmt.Sprintf("%s-interopMCPServer", name)
+		servers[serverKey] = map[string]string{
+			"url": fmt.Sprintf("http://localhost:%d/sse", mcpServer.Port),
 		}
 	}
 
-	if len(cmdConfig) > 0 {
-		config["command_mcp_assignments"] = cmdConfig
-	}
-
 	// Marshal to JSON
-	jsonData, err := json.MarshalIndent(config, "", "  ")
+	jsonData, err := json.MarshalIndent(servers, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal configuration: %v", err)
 	}
