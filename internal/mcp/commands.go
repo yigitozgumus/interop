@@ -119,7 +119,9 @@ func StreamServerEvents(serverName string) error {
 	// Get server info to check if it's running
 	manager, err := NewServerManager()
 	if err != nil {
-		return fmt.Errorf("failed to initialize MCP server manager: %v", err)
+		err = fmt.Errorf("failed to initialize MCP server manager: %v", err)
+		logging.Error("%v", err)
+		return err
 	}
 
 	var server *Server
@@ -131,7 +133,9 @@ func StreamServerEvents(serverName string) error {
 		var exists bool
 		server, exists = manager.Servers[serverName]
 		if !exists {
-			return fmt.Errorf("MCP server '%s' not found", serverName)
+			err = fmt.Errorf("MCP server '%s' not found", serverName)
+			logging.Error("%v", err)
+			return err
 		}
 	}
 
@@ -140,7 +144,9 @@ func StreamServerEvents(serverName string) error {
 		if serverName != "" {
 			serverDesc = fmt.Sprintf("MCP server '%s'", serverName)
 		}
-		return fmt.Errorf("%s is not running", serverDesc)
+		err = fmt.Errorf("%s is not running", serverDesc)
+		logging.Error("%v", err)
+		return err
 	}
 
 	port := server.Port
@@ -204,6 +210,7 @@ func StreamServerEvents(serverName string) error {
 	case <-sigChan:
 		fmt.Println("\nEvent streaming stopped by user.")
 	case err := <-errChan:
+		logging.Error("Event streaming error: %v", err)
 		fmt.Printf("\nEvent streaming error: %v\n", err)
 		return err
 	case <-doneChan:
@@ -230,12 +237,16 @@ func RunHTTPServer() error {
 	// Create a new MCP library server with name and port from env variables
 	mcpLibServer, err := NewMCPLibServer()
 	if err != nil {
-		return fmt.Errorf("failed to create MCP library server: %w", err)
+		err = fmt.Errorf("failed to create MCP library server: %w", err)
+		logging.Error("%v", err)
+		return err
 	}
 
 	// Start the HTTP server
 	if err := mcpLibServer.Start(); err != nil {
-		return fmt.Errorf("failed to start MCP library server: %w", err)
+		err = fmt.Errorf("failed to start MCP library server: %w", err)
+		logging.Error("%v", err)
+		return err
 	}
 
 	if serverName != "" {
@@ -263,7 +274,9 @@ func RunHTTPServer() error {
 func CheckPortAvailability() (string, error) {
 	cfg, err := settings.Load()
 	if err != nil {
-		return "", fmt.Errorf("failed to load settings: %v", err)
+		err = fmt.Errorf("failed to load settings: %v", err)
+		logging.Error("%v", err)
+		return "", err
 	}
 
 	result := "MCP Ports Availability Check:\n"
@@ -274,7 +287,10 @@ func CheckPortAvailability() (string, error) {
 	if IsPortAvailable(cfg.MCPPort) {
 		result += "Available\n"
 	} else {
-		result += "In use (possibly by the MCP server or another process)\n"
+		result += "In use\n"
+		// Add process info
+		processInfo := GetProcessUsingPort(cfg.MCPPort)
+		result += fmt.Sprintf("Process using this port:\n%s\n", processInfo)
 	}
 
 	// Check configured server ports
@@ -283,7 +299,10 @@ func CheckPortAvailability() (string, error) {
 		if IsPortAvailable(server.Port) {
 			result += "Available\n"
 		} else {
-			result += "In use (possibly by the MCP server or another process)\n"
+			result += "In use\n"
+			// Add process info
+			processInfo := GetProcessUsingPort(server.Port)
+			result += fmt.Sprintf("Process using this port:\n%s\n", processInfo)
 		}
 	}
 

@@ -93,20 +93,26 @@ func (s *Server) Start() error {
 		if s.Name != "" {
 			serverType = fmt.Sprintf("MCP server '%s'", s.Name)
 		}
-		return fmt.Errorf("%s is already running", serverType)
+		err := fmt.Errorf("%s is already running", serverType)
+		logging.Error("%v", err)
+		return err
 	}
 
 	// Create log file
 	logFile, err := os.OpenFile(s.LogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		return fmt.Errorf("failed to create log file: %w", err)
+		err = fmt.Errorf("failed to create log file: %w", err)
+		logging.Error("%v", err)
+		return err
 	}
 	defer logFile.Close()
 
 	// Get the path to the current executable
 	executable, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("failed to get executable path: %w", err)
+		err = fmt.Errorf("failed to get executable path: %w", err)
+		logging.Error("%v", err)
+		return err
 	}
 
 	// Prepare command to run server in daemon mode with port and name
@@ -122,7 +128,9 @@ func (s *Server) Start() error {
 
 	// Start the process
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start MCP server: %w", err)
+		err = fmt.Errorf("failed to start MCP server: %w", err)
+		logging.Error("%v", err)
+		return err
 	}
 
 	// Write PID to file
@@ -130,7 +138,9 @@ func (s *Server) Start() error {
 	if err := os.WriteFile(s.PidFile, []byte(strconv.Itoa(pid)), 0644); err != nil {
 		// Try to kill the process if we couldn't write the PID file
 		cmd.Process.Kill()
-		return fmt.Errorf("failed to write PID file: %w", err)
+		err = fmt.Errorf("failed to write PID file: %w", err)
+		logging.Error("%v", err)
+		return err
 	}
 
 	serverType := "MCP server"
@@ -151,20 +161,26 @@ func (s *Server) Stop() error {
 		if s.Name != "" {
 			serverType = fmt.Sprintf("MCP server '%s'", s.Name)
 		}
-		return fmt.Errorf("%s is not running: %w", serverType, err)
+		err = fmt.Errorf("%s is not running: %w", serverType, err)
+		logging.Error("%v", err)
+		return err
 	}
 
 	// Find the process
 	process, err := os.FindProcess(pid)
 	if err != nil {
-		return fmt.Errorf("failed to find process: %w", err)
+		err = fmt.Errorf("failed to find process: %w", err)
+		logging.Error("%v", err)
+		return err
 	}
 
 	// Send SIGTERM to gracefully terminate
 	if err := process.Signal(syscall.SIGTERM); err != nil {
 		// If SIGTERM fails, try SIGKILL
 		if err := process.Kill(); err != nil {
-			return fmt.Errorf("failed to kill process: %w", err)
+			err = fmt.Errorf("failed to kill process: %w", err)
+			logging.Error("%v", err)
+			return err
 		}
 	}
 
@@ -198,7 +214,9 @@ func (s *Server) Restart() error {
 			if s.Name != "" {
 				serverType = fmt.Sprintf("MCP server '%s'", s.Name)
 			}
-			return fmt.Errorf("failed to stop %s: %w", serverType, err)
+			err = fmt.Errorf("failed to stop %s: %w", serverType, err)
+			logging.Error("%v", err)
+			return err
 		}
 	}
 
@@ -236,22 +254,43 @@ func IsPortAvailable(port int) bool {
 	return true
 }
 
+// GetProcessUsingPort returns information about which process is using a port
+func GetProcessUsingPort(port int) string {
+	// Only available on Unix/Linux/macOS systems
+	cmd := exec.Command("lsof", "-i", fmt.Sprintf(":%d", port))
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// Could be an error or just no process found
+		return "Could not determine process"
+	}
+
+	// Check if we got any output
+	if len(output) == 0 {
+		return "No process found"
+	}
+
+	// Return the output (typically contains process name and PID)
+	return strings.TrimSpace(string(output))
+}
+
 // Status returns the current status of the MCP server
 func (s *Server) Status() string {
+	serverType := "MCP server"
+	if s.Name != "" {
+		serverType = fmt.Sprintf("MCP server '%s'", s.Name)
+	}
+
 	if s.IsRunning() {
 		pid, _ := s.getPid()
 
-		serverType := "MCP server"
-		if s.Name != "" {
-			serverType = fmt.Sprintf("MCP server '%s'", s.Name)
-		}
-
 		portStatus := "Port available: Yes"
 		if !IsPortAvailable(s.Port) {
-			if pid > 0 {
+			// Check if it's our process using the port
+			processInfo := GetProcessUsingPort(s.Port)
+			if strings.Contains(processInfo, fmt.Sprintf("%d", pid)) {
 				portStatus = "Port in use by this server"
 			} else {
-				portStatus = "Port in use by another process"
+				portStatus = fmt.Sprintf("Port in use by another process:\n%s", processInfo)
 			}
 		}
 
@@ -259,14 +298,10 @@ func (s *Server) Status() string {
 			serverType, pid, s.Port, portStatus)
 	}
 
-	serverType := "MCP server"
-	if s.Name != "" {
-		serverType = fmt.Sprintf("MCP server '%s'", s.Name)
-	}
-
 	portStatus := "Port available: Yes"
 	if !IsPortAvailable(s.Port) {
-		portStatus = "Port available: No (in use by another process)"
+		processInfo := GetProcessUsingPort(s.Port)
+		portStatus = fmt.Sprintf("Port available: No\nProcess using port %d:\n%s", s.Port, processInfo)
 	}
 
 	return fmt.Sprintf("%s is not running\n%s", serverType, portStatus)
@@ -326,9 +361,13 @@ func (m *ServerManager) StartServer(name string, all bool) error {
 		// Check if any servers started
 		if serversStarted == 0 {
 			if len(startErrors) > 0 {
-				return fmt.Errorf("failed to start any MCP servers: %s", strings.Join(startErrors, "; "))
+				err := fmt.Errorf("failed to start any MCP servers: %s", strings.Join(startErrors, "; "))
+				logging.Error("%v", err)
+				return err
 			}
-			return fmt.Errorf("no MCP servers started, possibly all already running")
+			err := fmt.Errorf("no MCP servers started, possibly all already running")
+			logging.Warning("%v", err)
+			return err
 		}
 
 		logging.Message("Started %d MCP servers successfully", serversStarted)
@@ -343,7 +382,9 @@ func (m *ServerManager) StartServer(name string, all bool) error {
 
 	server, exists := m.Servers[name]
 	if !exists {
-		return fmt.Errorf("MCP server '%s' not found", name)
+		err := fmt.Errorf("MCP server '%s' not found", name)
+		logging.Error("%v", err)
+		return err
 	}
 
 	return server.Start()
@@ -384,9 +425,13 @@ func (m *ServerManager) StopServer(name string, all bool) error {
 		// Check if any servers were stopped
 		if serversStopped == 0 {
 			if len(stopErrors) > 0 {
-				return fmt.Errorf("failed to stop any MCP servers: %s", strings.Join(stopErrors, "; "))
+				err := fmt.Errorf("failed to stop any MCP servers: %s", strings.Join(stopErrors, "; "))
+				logging.Error("%v", err)
+				return err
 			}
-			return fmt.Errorf("no MCP servers stopped, possibly none were running")
+			err := fmt.Errorf("no MCP servers stopped, possibly none were running")
+			logging.Warning("%v", err)
+			return err
 		}
 
 		logging.Message("Stopped %d MCP servers successfully", serversStopped)
@@ -401,7 +446,9 @@ func (m *ServerManager) StopServer(name string, all bool) error {
 
 	server, exists := m.Servers[name]
 	if !exists {
-		return fmt.Errorf("MCP server '%s' not found", name)
+		err := fmt.Errorf("MCP server '%s' not found", name)
+		logging.Error("%v", err)
+		return err
 	}
 
 	return server.Stop()
@@ -439,9 +486,13 @@ func (m *ServerManager) RestartServer(name string, all bool) error {
 		// Check if any servers were restarted
 		if serversRestarted == 0 {
 			if len(restartErrors) > 0 {
-				return fmt.Errorf("failed to restart any MCP servers: %s", strings.Join(restartErrors, "; "))
+				err := fmt.Errorf("failed to restart any MCP servers: %s", strings.Join(restartErrors, "; "))
+				logging.Error("%v", err)
+				return err
 			}
-			return fmt.Errorf("no MCP servers restarted")
+			err := fmt.Errorf("no MCP servers restarted")
+			logging.Warning("%v", err)
+			return err
 		}
 
 		logging.Message("Restarted %d MCP servers successfully", serversRestarted)
@@ -456,7 +507,9 @@ func (m *ServerManager) RestartServer(name string, all bool) error {
 
 	server, exists := m.Servers[name]
 	if !exists {
-		return fmt.Errorf("MCP server '%s' not found", name)
+		err := fmt.Errorf("MCP server '%s' not found", name)
+		logging.Error("%v", err)
+		return err
 	}
 
 	return server.Restart()

@@ -574,7 +574,9 @@ func (s *MCPLibServer) Start() error {
 
 	// Use this server's configured port, not the default
 	if err := s.sseServer.Start(fmt.Sprintf(":%d", s.port)); err != nil {
-		return fmt.Errorf("failed to start SSE server: %w", err)
+		err = fmt.Errorf("failed to start SSE server: %w", err)
+		logging.Error("%v", err)
+		return err
 	}
 
 	return nil
@@ -597,7 +599,9 @@ func (s *MCPLibServer) Stop() error {
 	defer cancel()
 
 	if err := s.sseServer.Shutdown(ctx); err != nil {
-		return fmt.Errorf("failed to shutdown HTTP server: %w", err)
+		err = fmt.Errorf("failed to shutdown HTTP server: %w", err)
+		logging.Error("%v", err)
+		return err
 	}
 
 	return nil
