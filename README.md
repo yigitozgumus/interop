@@ -1,57 +1,100 @@
-# Interop CLI
+# Interop
 
-A Go command-line interface application for managing and organizing your projects.
+Interop is a powerful command-line interface tool designed to improve developer productivity by providing a unified interface for managing projects, executing commands, and integrating with AI assistants.
 
-## Features
+## What is Interop?
 
-- Project management with path validation
-- Configurable logging levels
-- Settings management using TOML configuration
-- Support for both regular and snapshot releases
-- Cross-platform support (Linux, Windows, macOS)
-- Beautiful and readable project listing
-- Custom command execution with project association
-- MCP (Model Context Protocol) server integration for AI assistant support
+Interop serves as a bridge between your development projects, custom commands, and AI assistants. It allows you to:
+
+- Organize multiple projects with metadata, commands, and validation
+- Define and execute commands with project context awareness
+- Configure multiple MCP (Model Context Protocol) servers for AI integration
+- Streamline repetitive development tasks across different domains
+
+## Core Features
+
+- **Project Management**: Track and validate multiple project directories
+- **Command Execution**: Run commands with project context and arguments
+- **AI Integration**: Multiple MCP servers to expose commands to AI assistants
+- **Configuration Management**: TOML-based configuration with validation
+- **Cross-Platform Support**: Works on Linux, macOS, and Windows
 
 ## Installation
 
-### Using Homebrew
-
-To install Interop using Homebrew, run the following command:
+### Using Homebrew (macOS/Linux)
 
 ```bash
 brew install yigitozgumus/formulae/interop
 ```
 
+### Building from Source
+
+1. Clone the repository:
+```bash
+git clone https://github.com/yigitozgumus/interop.git
+cd interop
+```
+
+2. Build the project:
+```bash
+go build -o interop ./cmd/cli
+```
+
 ## Configuration
 
-Interop uses a TOML configuration file located at `~/.config/interop/settings.toml`. The configuration includes:
+Interop uses a TOML configuration file at `~/.config/interop/settings.toml`. To edit it:
 
-- Log level settings
-- Project configurations with paths and descriptions
-- Custom commands with project associations
+```bash
+interop edit
+```
 
-Example configuration:
+### Configuration Structure
 
 ```toml
-log_level = "warning"
-
-# Additional paths to search for executables
+# Global settings
+log_level = "verbose"  # Options: error, warning, verbose
 executable_search_paths = ["~/.local/bin", "~/bin"]
+mcp_port = 8081  # Default MCP server port
 
-[projects]
-[projects.my-project]
-path = "~/projects/my-project"
-description = "My awesome project"
+# MCP Server Configurations
+[mcp_servers.domain1]
+name = "domain1"
+description = "Domain-specific commands"
+port = 8082
+
+[mcp_servers.domain2]
+name = "domain2"
+description = "Another domain for commands"
+port = 8083
+
+# Project Definitions
+[projects.project1]
+path = "~/projects/project1"
+description = "Project 1 description"
 commands = [
-  {command_name = "build", alias = "b"},
-  {command_name = "deploy"}
+  { command_name = "build", alias = "b" },
+  { command_name = "test" }
 ]
 
-[commands]
+[projects.project2]
+path = "~/projects/project2"
+description = "Project 2 description"
+commands = [
+  { command_name = "deploy", alias = "d" }
+]
+
+# Command Definitions
 [commands.build]
 cmd = "go build ./..."
 description = "Build the project"
+is_enabled = true
+is_executable = false
+# Assign to a specific MCP server
+mcp = "domain1"
+
+[commands.test]
+cmd = "go test ./..."
+description = "Run tests"
 is_enabled = true
 is_executable = false
 
@@ -60,8 +103,9 @@ cmd = "deploy.sh"
 description = "Deploy the project"
 is_enabled = true
 is_executable = true
+mcp = "domain2"
 
-# Example of a command with arguments
+# Command with Arguments
 [commands.build-app]
 cmd = "go build -o ${output_file} ${package}"
 description = "Build a Go application"
@@ -73,55 +117,58 @@ arguments = [
 ]
 ```
 
-## Usage
+## Project Management
 
-### List Projects
+Projects are the core organizational unit in Interop.
 
-To list all configured projects:
+### Listing Projects
 
 ```bash
 interop projects
 ```
 
-This will show a beautifully formatted list of your projects with their associated commands:
-
+Output example:
 ```
 PROJECTS:
 =========
 
-📁 Name: my-project
-   Path: ~/projects/my-project
+📁 Name: project1
+   Path: ~/projects/project1
    Status: Valid: ✓  |  In $HOME: ✓
-   Description: My awesome project
+   Description: Project 1 description
    Commands:
-      ⚡ build
+      ⚡ build (alias: b)
          Build the project
-      ⚡ deploy (alias: dep)
-         Deploy the project
+      ⚡ test
+         Run tests
 
-📁 Name: another-project
-   Path: /opt/projects/another
-   Status: Valid: ✓  |  In $HOME: ✗
+📁 Name: project2
+   Path: ~/projects/project2
+   Status: Valid: ✓  |  In $HOME: ✓
+   Description: Project 2 description
+   Commands:
+      ⚡ deploy (alias: d)
+         Deploy the project
 ```
 
-The output includes:
-- Project name with a folder icon
-- Project path
-- Path validity status (✓ or ✗)
-- Whether the path is within the home directory (✓ or ✗)
-- Project descriptions (if provided)
-- Commands associated with the project and their aliases
+### Project Configuration
 
-### List Commands
+Each project includes:
+- **Path**: Directory location (validated for existence)
+- **Description**: Optional project description
+- **Commands**: List of commands with optional aliases
 
-To list all configured commands:
+## Command Management
+
+Interop provides a flexible command system that adapts to your workflow.
+
+### Listing Commands
 
 ```bash
 interop commands
 ```
 
-This will show a formatted list of your commands:
-
+Output example:
 ```
 COMMANDS:
 =========
@@ -129,187 +176,226 @@ COMMANDS:
 ⚡ Name: build
    Status: Enabled: ✓  |  Source: Script
    Description: Build the project
+   MCP Server: domain1
 
+⚡ Name: test
+   Status: Enabled: ✓  |  Source: Script
+   Description: Run tests
+   
 ⚡ Name: deploy
-   Status: Enabled: ✓  |  Source: Executables
+   Status: Enabled: ✓  |  Source: Executable
    Description: Deploy the project
+   MCP Server: domain2
 ```
 
-### Execute Commands
+### Command Types
 
-To execute a command or alias:
-
-```bash
-interop run <command-or-alias>
-```
-
-The system will:
-1. Validate the command configuration 
-2. Resolve the command or alias to determine its type
-3. For project-specific commands, change to the project directory before execution
-4. Execute the command and return to the original directory when done
-
-Commands can be:
-- Global commands (not tied to specific projects)
-- Project-specific commands (tied to one project)
-- Commands with aliases for project-specific usage
-- Regular shell commands (executed via shell)
-- Executable files (from the executables directory)
-- Enabled/disabled as needed
-
-### Command Arguments
-
-Commands can be defined with typed arguments that add validation and better integration with tools:
-
-```toml
-[commands.build-app]
-cmd = "go build -o ${output_file} ${package}"
-description = "Build a Go application"
-arguments = [
-  { name = "output_file", type = "string", description = "Output file name", required = true },
-  { name = "package", type = "string", description = "Package to build", default = "./cmd/app" }
-]
-```
-
-Argument features:
-- **Types**: Support for `string`, `number`, and `bool` types
-- **Required Fields**: Mark arguments as required
-- **Default Values**: Provide defaults for optional arguments
-- **Descriptions**: Document the purpose of each argument
-
-Arguments can be provided when running commands:
-
-```bash
-# Using the CLI with named arguments
-interop run build-app output_file=myapp
-
-# Using named arguments with the MCP tools interface
-interop mcp tools execute build-app output_file=myapp package=./cmd/server
-
-# Using positional arguments in the order they are defined
-interop mcp tools execute build-app myapp ./cmd/server
-```
-
-The system will automatically:
-1. Validate that all required arguments are provided
-2. Convert arguments to the correct type
-3. Apply default values for missing optional arguments
-4. Replace the placeholders in the command string with the actual values
-
-When using positional arguments:
-- Arguments are matched in the order they are defined in the command configuration
-- Values are automatically converted to the correct type based on the argument definition
-- If fewer arguments are provided than defined, default values will be used for optional arguments
-- Extra positional arguments beyond the defined arguments will be ignored with a warning
-
-### Command Types and Execution
-
-Interop supports several ways to specify and execute commands:
-
-1. **Shell Commands**: Regular commands executed via the user's shell (specified by the `SHELL` environment variable).
+1. **Shell Commands**: Run through the system shell
    ```toml
    [commands.list]
    cmd = "ls -la"
    ```
 
-2. **Shell Aliases**: Run aliases defined in your shell's configuration (like .bashrc, .zshrc, or fish config).
-   ```toml
-   [commands.gitstat]
-   cmd = "alias:gst"  # Runs the 'gst' alias from your shell
-   ```
-
-3. **Local Script Commands**: Scripts that start with `./` are executed directly from the project directory.
-   ```toml
-   [commands.build]
-   cmd = "./gradlew :app:assembleDebug"
-   ```
-
-4. **Executable Commands**: Executables are searched for in multiple locations when `is_executable = true`:
+2. **Executable Commands**: Run directly from configured paths
    ```toml
    [commands.deploy]
    cmd = "deploy.sh"
    is_executable = true
    ```
-   
-   The search order is:
-   - Interop's executables directory (`~/.config/interop/executables/`)
-   - Additional paths specified in configuration (`executable_search_paths`)
-   - System PATH
 
-### MCP Server Integration
+3. **Project-bound Commands**: Run in the context of a specific project
+   ```toml
+   [projects.project1]
+   commands = [{ command_name = "build" }]
+   ```
 
-Interop includes a built-in MCP (Model Context Protocol) server for integration with AI assistants:
+4. **Commands with Arguments**: Templated commands with validation
+   ```toml
+   [commands.build-app]
+   cmd = "go build -o ${output_file} ${package}"
+   arguments = [
+     { name = "output_file", type = "string", required = true },
+     { name = "package", type = "string", default = "./cmd/app" }
+   ]
+   ```
+
+### Executing Commands
+
+Run a command by name or alias:
 
 ```bash
-# Start the MCP server
-interop mcp start
+# Simple command
+interop run build
 
-# Check the status of the MCP server
-interop mcp status
+# Command with alias
+interop run b  # Runs the build command
 
-# Stop the MCP server
-interop mcp stop
-
-# Restart the MCP server
-interop mcp restart
+# Command with arguments
+interop run build-app output_file=myapp.exe
 ```
 
-The MCP server exposes your commands as tools that can be invoked by AI assistants supporting the Model Context Protocol. This allows AI assistants to:
+For project-bound commands, Interop automatically:
+1. Changes to the project directory
+2. Executes the command
+3. Returns to the original directory
 
-- List and execute your configured commands
-- Access project information
-- Run commands in the context of specific projects
+## MCP Server Integration
 
-For Claude and other MCP-compatible AI assistants, the server automatically configures itself to ensure compatibility by disabling color output when needed.
+Interop includes robust support for AI integration via MCP (Model Context Protocol) servers.
 
-### Executable Search Paths
+### What are MCP Servers?
 
-You can specify additional directories to search for executables:
+MCP servers expose your commands as tools that can be invoked by AI assistants like Claude. Each server can provide a different set of commands, allowing domain-specific organization.
+
+### Managing MCP Servers
+
+```bash
+# Start servers
+interop mcp start                # Start default server
+interop mcp start domain1        # Start specific server
+interop mcp start --all          # Start all servers
+
+# Check status
+interop mcp status               # Default shows all servers
+interop mcp status domain1       # Check specific server
+
+# Stop servers
+interop mcp stop domain1         # Stop specific server
+interop mcp stop --all           # Stop all servers
+
+# Restart servers
+interop mcp restart domain1      # Restart specific server
+interop mcp restart --all        # Restart all servers
+
+# Port management
+interop mcp port-check           # Check if ports are available
+
+# Get configuration for AI tools
+interop mcp export               # Export JSON configuration
+```
+
+### Multiple MCP Servers
+
+You can organize commands by domain:
 
 ```toml
-executable_search_paths = ["~/.local/bin", "~/bin"]
+[mcp_servers.work]
+name = "work"
+description = "Work-related commands"
+port = 8082
+
+[mcp_servers.personal]
+name = "personal"
+description = "Personal project commands"
+port = 8083
+
+[commands.work-task]
+cmd = "work-script.sh"
+mcp = "work"  # This command is available on the work server
+
+[commands.personal-task]
+cmd = "personal-script.sh"
+mcp = "personal"  # This command is available on the personal server
 ```
 
-This is useful for:
-- Custom scripts in your home directory
-- Local development tools
-- System-wide executables not in standard PATH
+Each server exposes only the commands assigned to it, creating a clean separation between different domains.
+
+### AI Assistant Integration
+
+When an AI assistant connects to an MCP server, it can:
+1. See available commands and their descriptions
+2. Execute commands with arguments
+3. Receive command outputs and errors
+
+This creates a powerful interface where the AI can help you execute tasks based on natural language instructions.
+
+## Command Arguments
+
+Commands can have typed arguments with validation:
+
+```toml
+[commands.generate]
+cmd = "generate.sh ${type} ${name} ${force}"
+description = "Generate a new component"
+arguments = [
+  { name = "type", type = "string", description = "Component type", required = true },
+  { name = "name", type = "string", description = "Component name", required = true },
+  { name = "force", type = "bool", description = "Overwrite if exists", default = false }
+]
+```
+
+### Argument Types
+
+- **string**: Text values
+- **number**: Numeric values (integers or decimals)
+- **bool**: Boolean values (true/false)
+
+### Argument Features
+
+- **Required**: Mark arguments that must be provided
+- **Default Values**: Set fallback values for optional arguments
+- **Descriptions**: Document the purpose of each argument
+
+### Using Arguments
+
+```bash
+# Named arguments
+interop run generate type=component name=Button
+
+# Positional arguments (in order of definition)
+interop run generate component Button true
+```
+
+## Validation & Diagnostics
 
 ### Validate Configuration
-
-To check your configuration for errors:
 
 ```bash
 interop validate
 ```
 
-This will validate that:
-- All command references in projects exist
-- No command is bound to multiple projects without an alias
-- Aliases are unique across projects
+This validates:
+- Project paths exist
+- Command references are valid
+- No conflicting aliases
+- Required command arguments have definitions
+- MCP server ports don't conflict
 
-### Edit Configuration
-
-To edit the configuration file:
+### Port Checking
 
 ```bash
-interop edit
+interop mcp port-check
 ```
 
-This will open the configuration file in your default editor.
+This shows:
+- Which ports are available
+- Which ports are in use
+- Which processes are using ports
 
-### Log Levels
+## Logging Levels
 
-The following log levels are supported:
-- `error`: Only shows error messages
-- `warning`: Shows errors and warnings
-- `verbose`: Shows all messages
+Configure verbosity in settings:
 
-The output is colorized for better readability in terminals, but colors are automatically disabled when:
-- Output is not directed to a terminal
-- Integration with programmatic tools like MCP server requires plain text
+```toml
+log_level = "verbose"  # Options: error, warning, verbose
+```
 
-## Project Structure
+## Advanced Features
+
+### Executable Search Paths
+
+Interop searches for executables in:
+1. Configuration directory (`~/.config/interop/executables/`)
+2. Additional paths specified in configuration
+3. System PATH
+
+```toml
+executable_search_paths = ["~/.local/bin", "~/bin"]
+```
+
+## Development
+
+### Project Structure
 
 ```
 .
@@ -328,36 +414,12 @@ The output is colorized for better readability in terminals, but colors are auto
 └── .github/          # GitHub workflows and templates
 ```
 
-## Development
-
-### Prerequisites
-
-- Go 1.21 or later
-- Make (optional, for using Makefile commands)
-
-### Building from Source
-
-1. Clone the repository:
-```bash
-git clone https://github.com/yigitozgumus/interop.git
-cd interop
-```
-
-2. Build the project:
-```bash
-go build -o interop ./cmd/cli
-```
-
 ### Testing
 
 Run the test suite:
 ```bash
 go test ./...
 ```
-
-### Release Process
-
-The project uses GoReleaser for creating releases. See [README-releases.md](README-releases.md) for detailed information about the release process.
 
 ## License
 
