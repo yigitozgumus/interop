@@ -114,15 +114,30 @@ func RunWithSearchPathsAndArgs(command CommandInfo, executableSearchPaths []stri
 			commandToRun = userShell.ExecuteAlias(command.Cmd)
 		}
 	} else if command.IsExecutable {
-		// For executable commands, look for the executable in all search paths
-		execPath, err := FindExecutable(command.Cmd, executableSearchPaths)
+		// For executable commands, parse the command line to extract the executable name and any arguments
+		cmdFields := strings.Fields(command.Cmd)
+		executableName := cmdFields[0]
+		cmdArgs := []string{}
+
+		// Add command's own arguments if any
+		if len(cmdFields) > 1 {
+			cmdArgs = append(cmdArgs, cmdFields[1:]...)
+		}
+
+		// Add additional arguments if provided
+		if args != nil && len(args) > 0 {
+			cmdArgs = append(cmdArgs, args...)
+		}
+
+		// Look for the executable in all search paths
+		execPath, err := FindExecutable(executableName, executableSearchPaths)
 		if err != nil {
 			return err
 		}
 
-		if args != nil && len(args) > 0 {
-			logging.Message("Found executable '%s', executing with args: %v", execPath, args)
-			commandToRun = exec.Command(execPath, args...)
+		if len(cmdArgs) > 0 {
+			logging.Message("Found executable '%s', executing with args: %v", execPath, cmdArgs)
+			commandToRun = exec.Command(execPath, cmdArgs...)
 		} else {
 			logging.Message("Found executable '%s', executing", execPath)
 			commandToRun = exec.Command(execPath)
@@ -166,13 +181,17 @@ func RunWithSearchPathsAndArgs(command CommandInfo, executableSearchPaths []stri
 
 // FindExecutable searches for an executable in the provided search paths
 func FindExecutable(executableName string, searchPaths []string) (string, error) {
+	// Make sure we only use the executable name, not any arguments
+	executableName = strings.Fields(executableName)[0]
+
 	// Check each search path
 	for _, searchPath := range searchPaths {
 		candidatePath := filepath.Join(searchPath, executableName)
-		if _, err := os.Stat(candidatePath); err == nil {
-			// Make sure the file is executable
-			if err := os.Chmod(candidatePath, 0755); err != nil {
-				return "", fmt.Errorf("failed to set executable permissions: %w", err)
+		if fileInfo, err := os.Stat(candidatePath); err == nil {
+			// Check if the file has executable permissions
+			if fileInfo.Mode()&0100 == 0 {
+				// File exists but is not executable
+				return "", fmt.Errorf("file '%s' exists but doesn't have executable permissions. Run 'chmod +x %s' to fix this issue", candidatePath, candidatePath)
 			}
 			return candidatePath, nil
 		}
@@ -182,6 +201,14 @@ func FindExecutable(executableName string, searchPaths []string) (string, error)
 	execPath, err := exec.LookPath(executableName)
 	if err != nil {
 		return "", fmt.Errorf("executable '%s' not found in any search path or system PATH: %v", executableName, err)
+	}
+
+	// Check if the found file has executable permissions
+	if fileInfo, err := os.Stat(execPath); err == nil {
+		if fileInfo.Mode()&0100 == 0 {
+			// File exists but is not executable
+			return "", fmt.Errorf("file '%s' exists but doesn't have executable permissions. Run 'chmod +x %s' to fix this issue", execPath, execPath)
+		}
 	}
 
 	return execPath, nil

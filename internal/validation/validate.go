@@ -9,6 +9,10 @@ import (
 	"interop/internal/settings"
 	"interop/internal/shell"
 	"interop/internal/validation/project"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 )
 
 // CommandType represents the type of a command
@@ -32,6 +36,26 @@ type CommandReference struct {
 type ValidationError struct {
 	Message string
 	Severe  bool // If true, this error should prevent operation
+}
+
+// isFileExecutable checks if a file exists and has executable permissions
+func isFileExecutable(path string) (bool, error) {
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil // File doesn't exist
+		}
+		return false, err // Other error
+	}
+
+	// Check if it's a file and not a directory
+	if fileInfo.IsDir() {
+		return false, nil
+	}
+
+	// Check if file has executable permission
+	// 0100 is the executable bit for owner
+	return fileInfo.Mode()&0100 != 0, nil
 }
 
 // ValidateCommands validates all commands in the settings
@@ -82,6 +106,55 @@ func ValidateCommands(cfg *settings.Settings) []ValidationError {
 					})
 				}
 				usedAliases[aliasConfig.Alias] = projectName
+			}
+		}
+	}
+
+	// Check executable commands for proper permissions
+	for _, cmd := range cfg.Commands {
+		if cmd.IsExecutable {
+			// Extract just the command name (first part before whitespace)
+			cmdName := strings.Fields(cmd.Cmd)[0]
+
+			// Try to find the executable in various paths
+			// First try PATH environment
+			execPath, err := exec.LookPath(cmdName)
+			if err != nil {
+				// If not found in PATH, check in common executable locations
+				execDirs := []string{"/usr/bin", "/usr/local/bin", "/bin", "/opt/bin"}
+				found := false
+
+				for _, dir := range execDirs {
+					potentialPath := filepath.Join(dir, cmdName)
+					isExec, err := isFileExecutable(potentialPath)
+					if err == nil && isExec {
+						execPath = potentialPath
+						found = true
+						break
+					}
+				}
+
+				if !found {
+					errors = append(errors, ValidationError{
+						Message: fmt.Sprintf("Executable command '%s' not found in PATH or common executable directories", cmdName),
+						Severe:  false,
+					})
+					continue
+				}
+			}
+
+			// Check if found file has executable permissions
+			isExec, err := isFileExecutable(execPath)
+			if err != nil {
+				errors = append(errors, ValidationError{
+					Message: fmt.Sprintf("Error checking executable permissions for '%s': %v", cmdName, err),
+					Severe:  false,
+				})
+			} else if !isExec {
+				errors = append(errors, ValidationError{
+					Message: fmt.Sprintf("Command '%s' is marked as executable but doesn't have executable permissions. Use 'chmod +x %s' to fix.", cmdName, execPath),
+					Severe:  false,
+				})
 			}
 		}
 	}
