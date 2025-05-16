@@ -13,6 +13,7 @@ const (
 	ProjectAliasSymbol     = "🔄"
 	CommandDisabledSymbol  = "❌"
 	CommandEnabledSymbol   = "✓"
+	MCPServerSymbol        = "🔌"
 	ExecutableCommandLabel = "(Executable)"
 	ShellCommandLabel      = "(Shell)"
 )
@@ -44,6 +45,35 @@ func PrintCommandGraph(cfg *settings.Settings) {
 				}
 				aliasedCommands[cmdAlias.CommandName][cmdAlias.Alias] = projectName
 			}
+		}
+	}
+
+	// Print MCP server configuration first
+	fmt.Println("\nMCP Servers:")
+	fmt.Println("-----------")
+
+	// Default MCP server
+	fmt.Printf("%s Default MCP Server (Port: %d)\n", MCPServerSymbol, cfg.MCPPort)
+	fmt.Println("   └─ Commands: (commands with no MCP field)")
+	fmt.Println()
+
+	// Named MCP servers
+	if len(cfg.MCPServers) > 0 {
+		for name, server := range cfg.MCPServers {
+			fmt.Printf("%s %s MCP Server (Port: %d)\n", MCPServerSymbol, name, server.Port)
+			if server.Description != "" {
+				fmt.Printf("   └─ %s\n", server.Description)
+			}
+
+			// Count commands assigned to this server
+			cmdCount := 0
+			for _, cmd := range cfg.Commands {
+				if cmd.MCP == name {
+					cmdCount++
+				}
+			}
+			fmt.Printf("   └─ Commands: %d\n", cmdCount)
+			fmt.Println()
 		}
 	}
 
@@ -86,6 +116,18 @@ func PrintCommandGraph(cfg *settings.Settings) {
 			fmt.Printf("   └─ %s\n", cmdConfig.Description)
 		}
 
+		// Print MCP server assignment if available
+		if cmdConfig.MCP != "" {
+			// Get server details
+			if server, exists := cfg.MCPServers[cmdConfig.MCP]; exists {
+				fmt.Printf("   └─ %s Assigned to MCP server: %s (Port: %d)\n", MCPServerSymbol, cmdConfig.MCP, server.Port)
+			} else {
+				fmt.Printf("   └─ %s Warning: Assigned to undefined MCP server: %s\n", CommandDisabledSymbol, cmdConfig.MCP)
+			}
+		} else {
+			fmt.Printf("   └─ %s Default MCP server (Port: %d)\n", MCPServerSymbol, cfg.MCPPort)
+		}
+
 		// Print project associations
 		if !isGlobal {
 			fmt.Printf("   └─ Project bound: %s\n", strings.Join(projectList, ", "))
@@ -110,6 +152,7 @@ func PrintCommandGraph(cfg *settings.Settings) {
 	fmt.Printf("%s Command Alias\n", ProjectAliasSymbol)
 	fmt.Printf("%s Enabled Command\n", CommandEnabledSymbol)
 	fmt.Printf("%s Disabled Command\n", CommandDisabledSymbol)
+	fmt.Printf("%s MCP Server Association\n", MCPServerSymbol)
 	fmt.Println(ExecutableCommandLabel, "- Executable command")
 	fmt.Println(ShellCommandLabel, "- Shell command")
 }

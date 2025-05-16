@@ -110,6 +110,68 @@ func ValidateCommands(cfg *settings.Settings) []ValidationError {
 		}
 	}
 
+	// Validate MCP server configurations
+	usedPorts := make(map[int]string) // track port -> server name mapping
+
+	// Add default MCP port to used ports
+	if cfg.MCPPort > 0 {
+		usedPorts[cfg.MCPPort] = "default MCP server"
+	}
+
+	// Check for MCP server port conflicts
+	for name, server := range cfg.MCPServers {
+		// Validate MCP server required fields
+		if server.Name == "" {
+			errors = append(errors, ValidationError{
+				Message: fmt.Sprintf("MCP server '%s' must have a name", name),
+				Severe:  true,
+			})
+		} else if server.Name != name {
+			errors = append(errors, ValidationError{
+				Message: fmt.Sprintf("MCP server name '%s' doesn't match key '%s'", server.Name, name),
+				Severe:  true,
+			})
+		}
+
+		if server.Port <= 0 {
+			errors = append(errors, ValidationError{
+				Message: fmt.Sprintf("MCP server '%s' has invalid port: %d", name, server.Port),
+				Severe:  true,
+			})
+		} else {
+			// Check for port conflicts
+			if existingServer, exists := usedPorts[server.Port]; exists {
+				errors = append(errors, ValidationError{
+					Message: fmt.Sprintf("MCP server '%s' has port %d which conflicts with %s",
+						name, server.Port, existingServer),
+					Severe: true,
+				})
+			} else {
+				usedPorts[server.Port] = fmt.Sprintf("MCP server '%s'", name)
+			}
+		}
+
+		if server.Description == "" {
+			errors = append(errors, ValidationError{
+				Message: fmt.Sprintf("MCP server '%s' should have a description", name),
+				Severe:  false,
+			})
+		}
+	}
+
+	// Validate command MCP references
+	for cmdName, cmd := range cfg.Commands {
+		if cmd.MCP != "" {
+			if _, exists := cfg.MCPServers[cmd.MCP]; !exists {
+				errors = append(errors, ValidationError{
+					Message: fmt.Sprintf("Command '%s' references a non-existent MCP server '%s'",
+						cmdName, cmd.MCP),
+					Severe: true,
+				})
+			}
+		}
+	}
+
 	// Check executable commands for proper permissions
 	for _, cmd := range cfg.Commands {
 		if cmd.IsExecutable {
