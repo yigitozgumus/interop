@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"fmt"
 	"interop/internal/logging"
 	"interop/internal/settings"
@@ -17,10 +18,47 @@ import (
 type Server struct {
 	PidFile string
 	LogFile string
+	Name    string // Server name, empty for default
+	Port    int    // Server port
 }
 
-// NewServer creates a new MCP server instance
-func NewServer() (*Server, error) {
+// ServerManager manages multiple MCP servers
+type ServerManager struct {
+	Servers map[string]*Server // Map of server name to server instance
+}
+
+// NewServerManager creates a new MCP server manager
+func NewServerManager() (*ServerManager, error) {
+	cfg, err := settings.Load()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load settings: %w", err)
+	}
+
+	manager := &ServerManager{
+		Servers: make(map[string]*Server),
+	}
+
+	// Create default server
+	defaultServer, err := NewServer("", cfg.MCPPort)
+	if err != nil {
+		return nil, err
+	}
+	manager.Servers["default"] = defaultServer
+
+	// Create servers for each configured MCP server
+	for name, mcpServer := range cfg.MCPServers {
+		server, err := NewServer(name, mcpServer.Port)
+		if err != nil {
+			return nil, err
+		}
+		manager.Servers[name] = server
+	}
+
+	return manager, nil
+}
+
+// NewServer creates a new MCP server instance with the given name and port
+func NewServer(name string, port int) (*Server, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get home directory: %w", err)
@@ -32,9 +70,17 @@ func NewServer() (*Server, error) {
 		return nil, fmt.Errorf("failed to create MCP directory: %w", err)
 	}
 
+	// Use name as prefix for files if not empty, otherwise use "default"
+	prefix := "default"
+	if name != "" {
+		prefix = name
+	}
+
 	return &Server{
-		PidFile: filepath.Join(mcpDir, "mcp.pid"),
-		LogFile: filepath.Join(mcpDir, "mcp.log"),
+		PidFile: filepath.Join(mcpDir, prefix+".pid"),
+		LogFile: filepath.Join(mcpDir, prefix+".log"),
+		Name:    name,
+		Port:    port,
 	}, nil
 }
 
@@ -42,7 +88,11 @@ func NewServer() (*Server, error) {
 func (s *Server) Start() error {
 	// Check if server is already running
 	if s.IsRunning() {
-		return fmt.Errorf("MCP server is already running")
+		serverType := "MCP server"
+		if s.Name != "" {
+			serverType = fmt.Sprintf("MCP server '%s'", s.Name)
+		}
+		return fmt.Errorf("%s is already running", serverType)
 	}
 
 	// Create log file
@@ -58,11 +108,14 @@ func (s *Server) Start() error {
 		return fmt.Errorf("failed to get executable path: %w", err)
 	}
 
-	port := settings.GetMCPPort()
-
-	// Prepare command to run server in daemon mode
-	// We use the current executable with a special flag to run the HTTP server
+	// Prepare command to run server in daemon mode with port and name
 	cmd := exec.Command(executable, "mcp", "daemon")
+
+	// Add server name and port as environment variables
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("MCP_SERVER_NAME=%s", s.Name),
+		fmt.Sprintf("MCP_SERVER_PORT=%d", s.Port))
+
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 
@@ -79,8 +132,13 @@ func (s *Server) Start() error {
 		return fmt.Errorf("failed to write PID file: %w", err)
 	}
 
-	logging.Message("MCP server started with PID %d", pid)
-	logging.Message("HTTP server available at http://localhost:%d", port)
+	serverType := "MCP server"
+	if s.Name != "" {
+		serverType = fmt.Sprintf("MCP server '%s'", s.Name)
+	}
+
+	logging.Message("%s started with PID %d", serverType, pid)
+	logging.Message("HTTP server available at http://localhost:%d", s.Port)
 	return nil
 }
 
@@ -88,7 +146,11 @@ func (s *Server) Start() error {
 func (s *Server) Stop() error {
 	pid, err := s.getPid()
 	if err != nil {
-		return fmt.Errorf("MCP server is not running: %w", err)
+		serverType := "MCP server"
+		if s.Name != "" {
+			serverType = fmt.Sprintf("MCP server '%s'", s.Name)
+		}
+		return fmt.Errorf("%s is not running: %w", serverType, err)
 	}
 
 	// Find the process
@@ -118,7 +180,12 @@ func (s *Server) Stop() error {
 		logging.Warning("Failed to remove PID file: %v", err)
 	}
 
-	logging.Message("MCP server stopped")
+	serverType := "MCP server"
+	if s.Name != "" {
+		serverType = fmt.Sprintf("MCP server '%s'", s.Name)
+	}
+
+	logging.Message("%s stopped", serverType)
 	return nil
 }
 
@@ -126,7 +193,11 @@ func (s *Server) Stop() error {
 func (s *Server) Restart() error {
 	if s.IsRunning() {
 		if err := s.Stop(); err != nil {
-			return fmt.Errorf("failed to stop MCP server: %w", err)
+			serverType := "MCP server"
+			if s.Name != "" {
+				serverType = fmt.Sprintf("MCP server '%s'", s.Name)
+			}
+			return fmt.Errorf("failed to stop %s: %w", serverType, err)
 		}
 	}
 
@@ -159,11 +230,21 @@ func (s *Server) Status() string {
 	if s.IsRunning() {
 		pid, _ := s.getPid()
 
-		port := settings.GetMCPPort()
+		serverType := "MCP server"
+		if s.Name != "" {
+			serverType = fmt.Sprintf("MCP server '%s'", s.Name)
+		}
 
-		return fmt.Sprintf("MCP server is running (PID: %d)\nHTTP server available at http://localhost:%d", pid, port)
+		return fmt.Sprintf("%s is running (PID: %d)\nHTTP server available at http://localhost:%d",
+			serverType, pid, s.Port)
 	}
-	return "MCP server is not running"
+
+	serverType := "MCP server"
+	if s.Name != "" {
+		serverType = fmt.Sprintf("MCP server '%s'", s.Name)
+	}
+
+	return fmt.Sprintf("%s is not running", serverType)
 }
 
 // getPid reads the PID from the PID file
@@ -183,4 +264,197 @@ func (s *Server) getPid() (int, error) {
 	}
 
 	return pid, nil
+}
+
+// StartServer starts a specific MCP server or all servers
+func (m *ServerManager) StartServer(name string, all bool) error {
+	if all {
+		// Start all servers
+		for serverName, server := range m.Servers {
+			logging.Message("Starting MCP server: %s", serverName)
+			if err := server.Start(); err != nil {
+				logging.Warning("Failed to start MCP server '%s': %v", serverName, err)
+			}
+		}
+		return nil
+	}
+
+	// Start a specific server by name
+	if name == "" {
+		// Default server
+		return m.Servers["default"].Start()
+	}
+
+	server, exists := m.Servers[name]
+	if !exists {
+		return fmt.Errorf("MCP server '%s' not found", name)
+	}
+
+	return server.Start()
+}
+
+// StopServer stops a specific MCP server or all servers
+func (m *ServerManager) StopServer(name string, all bool) error {
+	if all {
+		// Stop all servers
+		for serverName, server := range m.Servers {
+			logging.Message("Stopping MCP server: %s", serverName)
+			if err := server.Stop(); err != nil {
+				logging.Warning("Failed to stop MCP server '%s': %v", serverName, err)
+			}
+		}
+		return nil
+	}
+
+	// Stop a specific server by name
+	if name == "" {
+		// Default server
+		return m.Servers["default"].Stop()
+	}
+
+	server, exists := m.Servers[name]
+	if !exists {
+		return fmt.Errorf("MCP server '%s' not found", name)
+	}
+
+	return server.Stop()
+}
+
+// RestartServer restarts a specific MCP server or all servers
+func (m *ServerManager) RestartServer(name string, all bool) error {
+	if all {
+		// Restart all servers
+		for serverName, server := range m.Servers {
+			logging.Message("Restarting MCP server: %s", serverName)
+			if err := server.Restart(); err != nil {
+				logging.Warning("Failed to restart MCP server '%s': %v", serverName, err)
+			}
+		}
+		return nil
+	}
+
+	// Restart a specific server by name
+	if name == "" {
+		// Default server
+		return m.Servers["default"].Restart()
+	}
+
+	server, exists := m.Servers[name]
+	if !exists {
+		return fmt.Errorf("MCP server '%s' not found", name)
+	}
+
+	return server.Restart()
+}
+
+// GetStatus returns the status of a specific MCP server or all servers
+func (m *ServerManager) GetStatus(name string, all bool) string {
+	if all {
+		// Get status of all servers
+		status := "MCP Servers Status:\n"
+		status += "=====================\n"
+
+		for serverName, server := range m.Servers {
+			status += fmt.Sprintf("\n[%s]\n%s\n", serverName, server.Status())
+		}
+
+		return status
+	}
+
+	// Get status of a specific server
+	if name == "" {
+		// Default server
+		return m.Servers["default"].Status()
+	}
+
+	server, exists := m.Servers[name]
+	if !exists {
+		return fmt.Sprintf("MCP server '%s' not found", name)
+	}
+
+	return server.Status()
+}
+
+// ListMCPServers returns a list of configured MCP servers with their details
+func (m *ServerManager) ListMCPServers() string {
+	cfg, err := settings.Load()
+	if err != nil {
+		return fmt.Sprintf("Failed to load settings: %v", err)
+	}
+
+	result := "Configured MCP Servers:\n"
+	result += "=====================\n\n"
+
+	// First show default server
+	result += fmt.Sprintf("[default]\n")
+	result += fmt.Sprintf("Port: %d\n", cfg.MCPPort)
+	result += fmt.Sprintf("Status: %s\n\n", m.Servers["default"].Status())
+
+	// Then show all other servers
+	for name, mcpServer := range cfg.MCPServers {
+		result += fmt.Sprintf("[%s]\n", name)
+		result += fmt.Sprintf("Description: %s\n", mcpServer.Description)
+		result += fmt.Sprintf("Port: %d\n", mcpServer.Port)
+
+		if server, exists := m.Servers[name]; exists {
+			result += fmt.Sprintf("Status: %s\n", server.Status())
+		} else {
+			result += "Status: Not initialized\n"
+		}
+
+		// Get commands for this server
+		result += "\nCommands:\n"
+		hasCommands := false
+
+		for cmdName, cmd := range cfg.Commands {
+			if cmd.MCP == name {
+				result += fmt.Sprintf("- %s\n", cmdName)
+				hasCommands = true
+			}
+		}
+
+		if !hasCommands {
+			result += "- No commands assigned\n"
+		}
+
+		result += "\n"
+	}
+
+	return result
+}
+
+// ExportMCPConfig returns a JSON representation of the MCP configuration
+func (m *ServerManager) ExportMCPConfig() (string, error) {
+	cfg, err := settings.Load()
+	if err != nil {
+		return "", fmt.Errorf("failed to load settings: %v", err)
+	}
+
+	// Create a map with the relevant configuration
+	config := map[string]interface{}{
+		"mcp_port":    cfg.MCPPort,
+		"mcp_servers": cfg.MCPServers,
+	}
+
+	// Add commands with their MCP assignments
+	cmdConfig := make(map[string]map[string]string)
+	for name, cmd := range cfg.Commands {
+		if cmd.MCP != "" {
+			cmdConfig[name] = map[string]string{
+				"mcp": cmd.MCP,
+			}
+		}
+	}
+
+	if len(cmdConfig) > 0 {
+		config["command_mcp_assignments"] = cmdConfig
+	}
+
+	// Marshal to JSON
+	jsonData, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal configuration: %v", err)
+	}
+
+	return string(jsonData), nil
 }

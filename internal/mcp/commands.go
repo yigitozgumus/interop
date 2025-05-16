@@ -10,84 +10,144 @@ import (
 	"time"
 )
 
-// StartServer starts the MCP server daemon
-func StartServer() error {
-	server, err := NewServer()
+// StartServer starts the MCP server daemon with support for multiple servers
+func StartServer(serverName string, all bool) error {
+	manager, err := NewServerManager()
 	if err != nil {
-		logging.Error("failed to initialize MCP server: %w", err)
+		logging.Error("failed to initialize MCP server manager: %v", err)
+		return err
 	}
 
-	if server.IsRunning() {
-		logging.Message("MCP server is already running")
-		return nil
+	if err := manager.StartServer(serverName, all); err != nil {
+		logging.ErrorAndExit("failed to start MCP server: %v", err)
+		return err
 	}
 
-	if err := server.Start(); err != nil {
-		logging.ErrorAndExit("failed to start MCP server: %w", err)
+	if all {
+		logging.Message("All MCP servers started successfully")
+	} else if serverName == "" {
+		logging.Message("Default MCP server started successfully")
+	} else {
+		logging.Message("MCP server '%s' started successfully", serverName)
 	}
 
-	logging.Message("MCP server started successfully")
 	return nil
 }
 
-// StopServer stops the MCP server daemon
-func StopServer() error {
-	server, err := NewServer()
+// StopServer stops the MCP server daemon with support for multiple servers
+func StopServer(serverName string, all bool) error {
+	manager, err := NewServerManager()
 	if err != nil {
-		logging.ErrorAndExit("failed to initialize MCP server: %w", err)
+		logging.Error("failed to initialize MCP server manager: %v", err)
+		return err
 	}
 
-	if !server.IsRunning() {
-		logging.Message("MCP server is not running")
-		return nil
+	if err := manager.StopServer(serverName, all); err != nil {
+		logging.ErrorAndExit("failed to stop MCP server: %v", err)
+		return err
 	}
 
-	if err := server.Stop(); err != nil {
-		logging.ErrorAndExit("failed to stop MCP server: %w", err)
+	if all {
+		logging.Message("All MCP servers stopped successfully")
+	} else if serverName == "" {
+		logging.Message("Default MCP server stopped successfully")
+	} else {
+		logging.Message("MCP server '%s' stopped successfully", serverName)
 	}
 
-	logging.Message("MCP server stopped successfully")
 	return nil
 }
 
-// RestartServer restarts the MCP server daemon
-func RestartServer() error {
-	server, err := NewServer()
+// RestartServer restarts the MCP server daemon with support for multiple servers
+func RestartServer(serverName string, all bool) error {
+	manager, err := NewServerManager()
 	if err != nil {
-		logging.ErrorAndExit("failed to initialize MCP server: %w", err)
+		logging.Error("failed to initialize MCP server manager: %v", err)
+		return err
 	}
 
-	if err := server.Restart(); err != nil {
-		logging.ErrorAndExit("failed to restart MCP server: %w", err)
+	if err := manager.RestartServer(serverName, all); err != nil {
+		logging.ErrorAndExit("failed to restart MCP server: %v", err)
+		return err
 	}
 
-	logging.Message("MCP server restarted successfully")
+	if all {
+		logging.Message("All MCP servers restarted successfully")
+	} else if serverName == "" {
+		logging.Message("Default MCP server restarted successfully")
+	} else {
+		logging.Message("MCP server '%s' restarted successfully", serverName)
+	}
+
 	return nil
 }
 
-// GetStatus returns the status of the MCP server
-func GetStatus() (string, error) {
-	server, err := NewServer()
+// GetStatus returns the status of the MCP server with support for multiple servers
+func GetStatus(serverName string, all bool) (string, error) {
+	manager, err := NewServerManager()
 	if err != nil {
-		return "", fmt.Errorf("failed to initialize MCP server: %w", err)
+		return "", fmt.Errorf("failed to initialize MCP server manager: %v", err)
 	}
 
-	return server.Status(), nil
+	return manager.GetStatus(serverName, all), nil
+}
+
+// ListMCPServers lists all configured MCP servers
+func ListMCPServers() (string, error) {
+	manager, err := NewServerManager()
+	if err != nil {
+		return "", fmt.Errorf("failed to initialize MCP server manager: %v", err)
+	}
+
+	return manager.ListMCPServers(), nil
+}
+
+// ExportMCPConfig exports the MCP configuration as JSON
+func ExportMCPConfig() (string, error) {
+	manager, err := NewServerManager()
+	if err != nil {
+		return "", fmt.Errorf("failed to initialize MCP server manager: %v", err)
+	}
+
+	return manager.ExportMCPConfig()
 }
 
 // StreamServerEvents subscribes to and displays events from the MCP server
-func StreamServerEvents() error {
-	// Check if server is running
-	server, err := NewServer()
+func StreamServerEvents(serverName string) error {
+	// Get server info to check if it's running
+	manager, err := NewServerManager()
 	if err != nil {
-		return fmt.Errorf("failed to initialize MCP server: %w", err)
+		return fmt.Errorf("failed to initialize MCP server manager: %v", err)
+	}
+
+	var server *Server
+	if serverName == "" {
+		// Use default server
+		server = manager.Servers["default"]
+	} else {
+		// Use named server
+		var exists bool
+		server, exists = manager.Servers[serverName]
+		if !exists {
+			return fmt.Errorf("MCP server '%s' not found", serverName)
+		}
 	}
 
 	if !server.IsRunning() {
-		return fmt.Errorf("MCP server is not running")
+		serverDesc := "MCP server"
+		if serverName != "" {
+			serverDesc = fmt.Sprintf("MCP server '%s'", serverName)
+		}
+		return fmt.Errorf("%s is not running", serverDesc)
 	}
 
-	fmt.Println("Starting event stream from MCP server. Press Ctrl+C to exit.")
+	port := server.Port
+	serverDesc := "MCP server"
+	if serverName != "" {
+		serverDesc = fmt.Sprintf("MCP server '%s'", serverName)
+	}
+
+	fmt.Printf("Starting event stream from %s. Press Ctrl+C to exit.\n", serverDesc)
 	fmt.Println("─────────────────────────────────────────────────────────────")
 
 	// Set up signal handling for graceful exit
@@ -101,6 +161,8 @@ func StreamServerEvents() error {
 	// Start event streaming in a goroutine
 	go func() {
 		client := NewToolsClient()
+		client.SetPort(port) // Use the correct port
+
 		err := client.SubscribeToEvents(func(event string, data string) {
 			// Detect and ignore heartbeat events unless in verbose mode
 			if event == "heartbeat" {
@@ -151,12 +213,19 @@ func StreamServerEvents() error {
 
 // RunHTTPServer runs the MCP HTTP server directly (not as a daemon)
 // This function is called by the daemon subprocess
-func (s *Server) RunHTTPServer() error {
+func RunHTTPServer() error {
 	// Disable colors in the logger to avoid JSON parsing issues
 	logging.DisableColors()
-	logging.Message("Initializing server...")
 
-	// Create a new MCP library server
+	// Get server name from environment variable
+	serverName := os.Getenv("MCP_SERVER_NAME")
+	if serverName != "" {
+		logging.Message("Initializing MCP server '%s'...", serverName)
+	} else {
+		logging.Message("Initializing default MCP server...")
+	}
+
+	// Create a new MCP library server with name and port from env variables
 	mcpLibServer, err := NewMCPLibServer()
 	if err != nil {
 		return fmt.Errorf("failed to create MCP library server: %w", err)
@@ -167,7 +236,11 @@ func (s *Server) RunHTTPServer() error {
 		return fmt.Errorf("failed to start MCP library server: %w", err)
 	}
 
-	logging.Message("Server started and connected successfully")
+	if serverName != "" {
+		logging.Message("MCP server '%s' started and connected successfully", serverName)
+	} else {
+		logging.Message("Default MCP server started and connected successfully")
+	}
 
 	// Handle OS signals for graceful shutdown
 	signals := make(chan os.Signal, 1)

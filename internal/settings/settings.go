@@ -18,6 +18,13 @@ type Alias struct {
 	Alias       string `toml:"alias,omitempty"`
 }
 
+// MCPServer represents a configured MCP server with a name, description, and port
+type MCPServer struct {
+	Name        string `toml:"name"`
+	Description string `toml:"description"`
+	Port        int    `toml:"port"`
+}
+
 type Project struct {
 	Path        string  `toml:"path"`
 	Description string  `toml:"description,omitempty"`
@@ -52,6 +59,7 @@ type CommandConfig struct {
 	Cmd          string            `toml:"cmd"`
 	IsExecutable bool              `toml:"is_executable"`
 	Arguments    []CommandArgument `toml:"arguments,omitempty"` // Argument definitions for the command
+	MCP          string            `toml:"mcp,omitempty"`       // Optional MCP server name this command belongs to
 }
 
 // NewCommandConfig creates a new CommandConfig with default values
@@ -60,6 +68,7 @@ func NewCommandConfig() CommandConfig {
 		IsEnabled:    true,
 		IsExecutable: false,
 		Arguments:    []CommandArgument{},
+		MCP:          "",
 	}
 }
 
@@ -71,6 +80,7 @@ func (c *CommandConfig) UnmarshalTOML(data interface{}) error {
 	c.IsExecutable = false
 	c.Description = ""
 	c.Arguments = []CommandArgument{}
+	c.MCP = ""
 
 	// Handle different input cases
 	switch v := data.(type) {
@@ -87,6 +97,9 @@ func (c *CommandConfig) UnmarshalTOML(data interface{}) error {
 		}
 		c.IsEnabled = getBoolWithDefault(v, "is_enabled", true)
 		c.IsExecutable = getBoolWithDefault(v, "is_executable", false)
+		if mcp, ok := v["mcp"].(string); ok {
+			c.MCP = mcp
+		}
 
 		// Parse arguments if present
 		if args, ok := v["arguments"].([]interface{}); ok {
@@ -210,6 +223,7 @@ type Settings struct {
 	Commands              map[string]CommandConfig `toml:"commands"`
 	ExecutableSearchPaths []string                 `toml:"executable_search_paths"`
 	MCPPort               int                      `toml:"mcp_port"`
+	MCPServers            map[string]MCPServer     `toml:"mcp_servers"`
 }
 
 // PathConfig defines the directory structure for settings
@@ -291,6 +305,66 @@ func validate() (string, error) {
 	return path, nil
 }
 
+// ValidateMCPConfig validates the MCP configuration
+// It checks:
+// - top level mcp_port can't be the same as any MCP server port
+// - can't have MCP servers with the same port or name
+func ValidateMCPConfig(cfg *Settings) error {
+	if cfg.MCPServers == nil {
+		cfg.MCPServers = make(map[string]MCPServer)
+		return nil
+	}
+
+	// Check for duplicates or conflicts with default port
+	usedPorts := make(map[int]string)
+
+	// First put the default port in the map
+	if cfg.MCPPort > 0 {
+		usedPorts[cfg.MCPPort] = "default MCP server"
+	}
+
+	// Now check all defined MCP servers
+	for name, server := range cfg.MCPServers {
+		// Validate required fields
+		if server.Name == "" {
+			return fmt.Errorf("MCP server '%s' must have a name", name)
+		}
+
+		if server.Port <= 0 {
+			return fmt.Errorf("MCP server '%s' must have a valid port", name)
+		}
+
+		if server.Description == "" {
+			return fmt.Errorf("MCP server '%s' must have a description", name)
+		}
+
+		// Check for port conflicts
+		if existingServer, exists := usedPorts[server.Port]; exists {
+			return fmt.Errorf("MCP server '%s' has port %d which conflicts with %s",
+				name, server.Port, existingServer)
+		}
+
+		usedPorts[server.Port] = fmt.Sprintf("MCP server '%s'", name)
+
+		// Ensure server.Name matches the key
+		if server.Name != name {
+			return fmt.Errorf("MCP server name '%s' doesn't match key '%s'", server.Name, name)
+		}
+	}
+
+	// Check command MCP references
+	for cmdName, cmd := range cfg.Commands {
+		if cmd.MCP != "" {
+			if _, exists := cfg.MCPServers[cmd.MCP]; !exists {
+				return fmt.Errorf("command '%s' references non-existent MCP server '%s'",
+					cmdName, cmd.MCP)
+			}
+		}
+	}
+
+	return nil
+}
+
 // Load parses settings.toml once.
 func Load() (*Settings, error) {
 	once.Do(func() {
@@ -336,6 +410,23 @@ func Load() (*Settings, error) {
 				}
 			}
 			logging.Message("Projects are validated")
+		}
+
+		// Provide default values for fields that might not be in the file
+		if c.Projects == nil {
+			c.Projects = make(map[string]Project)
+		}
+		if c.Commands == nil {
+			c.Commands = make(map[string]CommandConfig)
+		}
+		if c.MCPServers == nil {
+			c.MCPServers = make(map[string]MCPServer)
+		}
+
+		// Validate MCP configuration
+		if err := ValidateMCPConfig(&c); err != nil {
+			err = err
+			logging.Error("Failed to validate MCP configuration: " + err.Error())
 		}
 
 		cfg = &c

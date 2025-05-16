@@ -125,55 +125,119 @@ func main() {
 		},
 	}
 
+	// Define flags for MCP commands
+	var allServers bool
+	var serverName string
+
 	// MCP start command
 	mcpStartCmd := &cobra.Command{
-		Use:   "start",
-		Short: "Start the MCP server",
+		Use:   "start [server-name]",
+		Short: "Start an MCP server or all servers",
+		Long:  "Start the default MCP server, a specific named server, or all servers",
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := mcp.StartServer(); err != nil {
+			// If server name is provided as an argument, override the flag
+			if len(args) > 0 {
+				serverName = args[0]
+			}
+
+			if err := mcp.StartServer(serverName, allServers); err != nil {
 				logging.ErrorAndExit("Failed to start MCP server: %v", err)
 			}
 		},
 	}
+	mcpStartCmd.Flags().BoolVarP(&allServers, "all", "a", false, "Start all MCP servers")
+	mcpStartCmd.Flags().StringVarP(&serverName, "server", "s", "", "Specific MCP server to start")
 	mcpCmd.AddCommand(mcpStartCmd)
 
 	// MCP stop command
 	mcpStopCmd := &cobra.Command{
-		Use:   "stop",
-		Short: "Stop the MCP server",
+		Use:   "stop [server-name]",
+		Short: "Stop an MCP server or all servers",
+		Long:  "Stop the default MCP server, a specific named server, or all servers",
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := mcp.StopServer(); err != nil {
+			// If server name is provided as an argument, override the flag
+			if len(args) > 0 {
+				serverName = args[0]
+			}
+
+			if err := mcp.StopServer(serverName, allServers); err != nil {
 				logging.ErrorAndExit("Failed to stop MCP server: %v", err)
 			}
 		},
 	}
+	mcpStopCmd.Flags().BoolVarP(&allServers, "all", "a", false, "Stop all MCP servers")
+	mcpStopCmd.Flags().StringVarP(&serverName, "server", "s", "", "Specific MCP server to stop")
 	mcpCmd.AddCommand(mcpStopCmd)
 
 	// MCP restart command
 	mcpRestartCmd := &cobra.Command{
-		Use:   "restart",
-		Short: "Restart the MCP server",
+		Use:   "restart [server-name]",
+		Short: "Restart an MCP server or all servers",
+		Long:  "Restart the default MCP server, a specific named server, or all servers",
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := mcp.RestartServer(); err != nil {
+			// If server name is provided as an argument, override the flag
+			if len(args) > 0 {
+				serverName = args[0]
+			}
+
+			if err := mcp.RestartServer(serverName, allServers); err != nil {
 				logging.ErrorAndExit("Failed to restart MCP server: %v", err)
 			}
 		},
 	}
+	mcpRestartCmd.Flags().BoolVarP(&allServers, "all", "a", false, "Restart all MCP servers")
+	mcpRestartCmd.Flags().StringVarP(&serverName, "server", "s", "", "Specific MCP server to restart")
 	mcpCmd.AddCommand(mcpRestartCmd)
 
 	// MCP status command
 	mcpStatusCmd := &cobra.Command{
-		Use:   "status",
-		Short: "Get the status of the MCP server",
+		Use:   "status [server-name]",
+		Short: "Get the status of an MCP server or all servers",
+		Long:  "Get the status of the default MCP server, a specific named server, or all servers",
 		Run: func(cmd *cobra.Command, args []string) {
-			status, err := mcp.GetStatus()
+			// If server name is provided as an argument, override the flag
+			if len(args) > 0 {
+				serverName = args[0]
+			}
+
+			status, err := mcp.GetStatus(serverName, allServers)
 			if err != nil {
 				logging.ErrorAndExit("Failed to get MCP server status: %v", err)
 			}
 			fmt.Println(status)
 		},
 	}
+	mcpStatusCmd.Flags().BoolVarP(&allServers, "all", "a", false, "Get status of all MCP servers")
+	mcpStatusCmd.Flags().StringVarP(&serverName, "server", "s", "", "Specific MCP server to get status for")
 	mcpCmd.AddCommand(mcpStatusCmd)
+
+	// MCP list command
+	mcpListCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all configured MCP servers and their commands",
+		Run: func(cmd *cobra.Command, args []string) {
+			result, err := mcp.ListMCPServers()
+			if err != nil {
+				logging.ErrorAndExit("Failed to list MCP servers: %v", err)
+			}
+			fmt.Println(result)
+		},
+	}
+	mcpCmd.AddCommand(mcpListCmd)
+
+	// MCP export command
+	mcpExportCmd := &cobra.Command{
+		Use:   "export",
+		Short: "Export MCP server configuration as JSON",
+		Run: func(cmd *cobra.Command, args []string) {
+			result, err := mcp.ExportMCPConfig()
+			if err != nil {
+				logging.ErrorAndExit("Failed to export MCP configuration: %v", err)
+			}
+			fmt.Println(result)
+		},
+	}
+	mcpCmd.AddCommand(mcpExportCmd)
 
 	// Hidden daemon command for internal use
 	mcpDaemonCmd := &cobra.Command{
@@ -181,12 +245,7 @@ func main() {
 		Short:  "Run the MCP HTTP server (internal use only)",
 		Hidden: true,
 		Run: func(cmd *cobra.Command, args []string) {
-			server, err := mcp.NewServer()
-			if err != nil {
-				logging.ErrorAndExit("Failed to initialize MCP server: %v", err)
-			}
-
-			if err := server.RunHTTPServer(); err != nil {
+			if err := mcp.RunHTTPServer(); err != nil {
 				logging.ErrorAndExit("Failed to run HTTP server: %v", err)
 			}
 		},
@@ -195,14 +254,21 @@ func main() {
 
 	// MCP events command
 	mcpToolsEventsCmd := &cobra.Command{
-		Use:   "events",
-		Short: "Stream real-time events from the MCP server",
+		Use:   "events [server-name]",
+		Short: "Stream real-time events from an MCP server",
+		Long:  "Stream real-time events from the default MCP server or a specific named server",
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := mcp.StreamServerEvents(); err != nil {
+			// If server name is provided as an argument, override the flag
+			if len(args) > 0 {
+				serverName = args[0]
+			}
+
+			if err := mcp.StreamServerEvents(serverName); err != nil {
 				logging.ErrorAndExit("Failed to stream events: %v", err)
 			}
 		},
 	}
+	mcpToolsEventsCmd.Flags().StringVarP(&serverName, "server", "s", "", "Specific MCP server to stream events from")
 	mcpCmd.AddCommand(mcpToolsEventsCmd)
 
 	// Add MCP command group to root command

@@ -56,8 +56,47 @@ func NewMCPLibServer() (*MCPLibServer, error) {
 		return nil, fmt.Errorf("failed to create config directory: %w", err)
 	}
 
+	// Get server name and port from environment variables if available
+	serverName := os.Getenv("MCP_SERVER_NAME")
+
+	// Determine the port to use
+	var port int
+	portStr := os.Getenv("MCP_SERVER_PORT")
+	if portStr != "" {
+		var err error
+		port, err = strconv.Atoi(portStr)
+		if err != nil {
+			logging.Warning("Invalid MCP_SERVER_PORT environment variable: %v, using default", err)
+			port = settings.GetMCPPort()
+		}
+	} else {
+		// If no specific port is provided, check if we're running a named server
+		if serverName != "" {
+			// For a named server, get its port from settings
+			cfg, err := settings.Load()
+			if err != nil {
+				return nil, fmt.Errorf("failed to load settings: %w", err)
+			}
+
+			if serverCfg, exists := cfg.MCPServers[serverName]; exists {
+				port = serverCfg.Port
+			} else {
+				return nil, fmt.Errorf("MCP server '%s' not defined in settings", serverName)
+			}
+		} else {
+			// Default server, use default port
+			port = settings.GetMCPPort()
+		}
+	}
+
+	// Use server name to create log file name
+	logFileName := "mcp-lib.log"
+	if serverName != "" {
+		logFileName = fmt.Sprintf("mcp-lib-%s.log", serverName)
+	}
+
 	// Create log file
-	logFilePath := filepath.Join(configDir, "mcp-lib.log")
+	logFilePath := filepath.Join(configDir, logFileName)
 	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create log file: %w", err)
@@ -82,11 +121,14 @@ func NewMCPLibServer() (*MCPLibServer, error) {
 		return nil, fmt.Errorf("failed to load settings: %w", err)
 	}
 
-	port := settings.GetMCPPort()
-
 	// Create MCP server with logging disabled
+	serverTitle := "Interop MCP Server"
+	if serverName != "" {
+		serverTitle = fmt.Sprintf("Interop MCP Server - %s", serverName)
+	}
+
 	mcpServer := server.NewMCPServer(
-		"Interop MCP Server",
+		serverTitle,
 		"1.0.0",
 		server.WithToolCapabilities(true),
 		server.WithLogging(),
@@ -105,24 +147,43 @@ func NewMCPLibServer() (*MCPLibServer, error) {
 		commandAliases: make(map[string]string),
 	}
 
-	// Register tools based on available commands
-	s.registerCommandTools()
+	// Register tools based on available commands for this server
+	s.registerCommandTools(serverName)
 
 	// Write initial log message to file only, not stdout
-	s.logInfo("MCP server initialized")
+	if serverName != "" {
+		s.logInfo("MCP server '%s' initialized on port %d", serverName, port)
+	} else {
+		s.logInfo("Default MCP server initialized on port %d", port)
+	}
 
 	return s, nil
 }
 
 // registerCommandTools converts the available commands to MCP tools
-func (s *MCPLibServer) registerCommandTools() {
+func (s *MCPLibServer) registerCommandTools(serverName string) {
 	// Map to track registered commands to avoid duplicates
 	registeredTools := make(map[string]bool)
 
-	// First, register all regular commands
+	// First, register all commands for this server
 	for name, cmd := range s.commandConfig {
 		if !cmd.IsEnabled {
 			continue
+		}
+
+		// If we have a specific server name, only add commands belonging to this server
+		if serverName != "" {
+			// Only add commands assigned to this server or with no MCP field
+			if cmd.MCP != "" && cmd.MCP != serverName {
+				// Skip commands assigned to a different server
+				continue
+			}
+		} else {
+			// For default server, only add commands with no MCP field
+			if cmd.MCP != "" {
+				// Skip commands assigned to a specific server
+				continue
+			}
 		}
 
 		// Register the main command
@@ -146,6 +207,21 @@ func (s *MCPLibServer) registerCommandTools() {
 					s.logInfo("Skipping alias %s for command %s (command not found or disabled)",
 						cmdAlias.Alias, cmdAlias.CommandName)
 					continue
+				}
+
+				// Filter by server name
+				if serverName != "" {
+					// For a named server, only include commands for this server
+					if cmd.MCP != "" && cmd.MCP != serverName {
+						// Skip commands assigned to a different server
+						continue
+					}
+				} else {
+					// For default server, only include commands with no MCP field
+					if cmd.MCP != "" {
+						// Skip commands assigned to a specific server
+						continue
+					}
 				}
 
 				// Skip if this alias is already a registered command name
@@ -174,8 +250,25 @@ func (s *MCPLibServer) registerCommandTools() {
 
 	s.mcpServer.AddTool(listCommandsTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		commands := make(map[string]interface{})
+
+		// Show only commands for this server
 		for name, cmd := range s.commandConfig {
 			if cmd.IsEnabled {
+				// Filter by server name
+				if serverName != "" {
+					// For a named server, only include commands for this server
+					if cmd.MCP != "" && cmd.MCP != serverName {
+						// Skip commands assigned to a different server
+						continue
+					}
+				} else {
+					// For default server, only include commands with no MCP field
+					if cmd.MCP != "" {
+						// Skip commands assigned to a specific server
+						continue
+					}
+				}
+
 				commands[name] = map[string]interface{}{
 					"description": cmd.Description,
 					"cmd":         cmd.Cmd,

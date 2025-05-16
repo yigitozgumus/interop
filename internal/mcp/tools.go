@@ -20,6 +20,11 @@ type ToolsClient struct {
 	Client  *http.Client
 }
 
+// SetPort changes the port used by the client
+func (c *ToolsClient) SetPort(port int) {
+	c.BaseURL = fmt.Sprintf("http://localhost:%d", port)
+}
+
 // SSEHandler defines a function that handles SSE events
 type SSEHandler func(event string, data string)
 
