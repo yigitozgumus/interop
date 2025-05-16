@@ -295,12 +295,43 @@ func (s *Server) getPid() (int, error) {
 func (m *ServerManager) StartServer(name string, all bool) error {
 	if all {
 		// Start all servers
-		for serverName, server := range m.Servers {
+		serversStarted := 0
+		var startErrors []string
+
+		// Get a sorted list of server names for consistent output
+		serverNames := make([]string, 0, len(m.Servers))
+		for serverName := range m.Servers {
+			serverNames = append(serverNames, serverName)
+		}
+
+		// Process servers
+		for _, serverName := range serverNames {
+			server := m.Servers[serverName]
+
 			logging.Message("Starting MCP server: %s", serverName)
+			if server.IsRunning() {
+				logging.Warning("MCP server '%s' is already running", serverName)
+				continue
+			}
+
 			if err := server.Start(); err != nil {
-				logging.Warning("Failed to start MCP server '%s': %v", serverName, err)
+				errMsg := fmt.Sprintf("Failed to start MCP server '%s': %v", serverName, err)
+				logging.Warning(errMsg)
+				startErrors = append(startErrors, errMsg)
+			} else {
+				serversStarted++
 			}
 		}
+
+		// Check if any servers started
+		if serversStarted == 0 {
+			if len(startErrors) > 0 {
+				return fmt.Errorf("failed to start any MCP servers: %s", strings.Join(startErrors, "; "))
+			}
+			return fmt.Errorf("no MCP servers started, possibly all already running")
+		}
+
+		logging.Message("Started %d MCP servers successfully", serversStarted)
 		return nil
 	}
 
@@ -322,12 +353,43 @@ func (m *ServerManager) StartServer(name string, all bool) error {
 func (m *ServerManager) StopServer(name string, all bool) error {
 	if all {
 		// Stop all servers
-		for serverName, server := range m.Servers {
+		serversStopped := 0
+		var stopErrors []string
+
+		// Get a sorted list of server names for consistent output
+		serverNames := make([]string, 0, len(m.Servers))
+		for serverName := range m.Servers {
+			serverNames = append(serverNames, serverName)
+		}
+
+		// Process servers
+		for _, serverName := range serverNames {
+			server := m.Servers[serverName]
+
 			logging.Message("Stopping MCP server: %s", serverName)
+			if !server.IsRunning() {
+				logging.Warning("MCP server '%s' is not running", serverName)
+				continue
+			}
+
 			if err := server.Stop(); err != nil {
-				logging.Warning("Failed to stop MCP server '%s': %v", serverName, err)
+				errMsg := fmt.Sprintf("Failed to stop MCP server '%s': %v", serverName, err)
+				logging.Warning(errMsg)
+				stopErrors = append(stopErrors, errMsg)
+			} else {
+				serversStopped++
 			}
 		}
+
+		// Check if any servers were stopped
+		if serversStopped == 0 {
+			if len(stopErrors) > 0 {
+				return fmt.Errorf("failed to stop any MCP servers: %s", strings.Join(stopErrors, "; "))
+			}
+			return fmt.Errorf("no MCP servers stopped, possibly none were running")
+		}
+
+		logging.Message("Stopped %d MCP servers successfully", serversStopped)
 		return nil
 	}
 
@@ -349,12 +411,40 @@ func (m *ServerManager) StopServer(name string, all bool) error {
 func (m *ServerManager) RestartServer(name string, all bool) error {
 	if all {
 		// Restart all servers
-		for serverName, server := range m.Servers {
+		serversRestarted := 0
+		var restartErrors []string
+
+		// Get a sorted list of server names for consistent output
+		serverNames := make([]string, 0, len(m.Servers))
+		for serverName := range m.Servers {
+			serverNames = append(serverNames, serverName)
+		}
+
+		// Process servers
+		for _, serverName := range serverNames {
+			server := m.Servers[serverName]
+
 			logging.Message("Restarting MCP server: %s", serverName)
+
+			// Try to restart
 			if err := server.Restart(); err != nil {
-				logging.Warning("Failed to restart MCP server '%s': %v", serverName, err)
+				errMsg := fmt.Sprintf("Failed to restart MCP server '%s': %v", serverName, err)
+				logging.Warning(errMsg)
+				restartErrors = append(restartErrors, errMsg)
+			} else {
+				serversRestarted++
 			}
 		}
+
+		// Check if any servers were restarted
+		if serversRestarted == 0 {
+			if len(restartErrors) > 0 {
+				return fmt.Errorf("failed to restart any MCP servers: %s", strings.Join(restartErrors, "; "))
+			}
+			return fmt.Errorf("no MCP servers restarted")
+		}
+
+		logging.Message("Restarted %d MCP servers successfully", serversRestarted)
 		return nil
 	}
 

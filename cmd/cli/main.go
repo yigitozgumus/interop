@@ -133,11 +133,17 @@ func main() {
 	mcpStartCmd := &cobra.Command{
 		Use:   "start [server-name]",
 		Short: "Start an MCP server or all servers",
-		Long:  "Start the default MCP server, a specific named server, or all servers",
+		Long:  "Start all MCP servers by default, or a specific named server if provided",
 		Run: func(cmd *cobra.Command, args []string) {
 			// If server name is provided as an argument, override the flag
 			if len(args) > 0 {
 				serverName = args[0]
+				allServers = false // Single server specified, turn off all flag
+			} else if serverName != "" {
+				allServers = false // Single server specified, turn off all flag
+			} else if !allServers {
+				// No server name provided and all flag not set, default to all servers
+				allServers = true
 			}
 
 			if err := mcp.StartServer(serverName, allServers); err != nil {
@@ -145,7 +151,7 @@ func main() {
 			}
 		},
 	}
-	mcpStartCmd.Flags().BoolVarP(&allServers, "all", "a", false, "Start all MCP servers")
+	mcpStartCmd.Flags().BoolVarP(&allServers, "all", "a", true, "Start all MCP servers (default)")
 	mcpStartCmd.Flags().StringVarP(&serverName, "server", "s", "", "Specific MCP server to start")
 	mcpCmd.AddCommand(mcpStartCmd)
 

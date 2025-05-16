@@ -572,9 +572,8 @@ func (s *MCPLibServer) Start() error {
 	// Ensure colors are disabled again just before starting server
 	logging.DisableColors()
 
-	port := settings.GetMCPPort()
-
-	if err := s.sseServer.Start(fmt.Sprintf(":%d", port)); err != nil {
+	// Use this server's configured port, not the default
+	if err := s.sseServer.Start(fmt.Sprintf(":%d", s.port)); err != nil {
 		return fmt.Errorf("failed to start SSE server: %w", err)
 	}
 
