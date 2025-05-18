@@ -7,6 +7,7 @@ import (
 	"interop/internal/logging"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -285,21 +286,24 @@ func validate() (string, error) {
 	}
 
 	if _, e := os.Stat(path); errors.Is(e, os.ErrNotExist) {
-		def := Settings{
-			LogLevel: "warning",
-			Projects: map[string]Project{},
-			Commands: map[string]CommandConfig{},
-			MCPPort:  cfg.MCPPort,
-		}
-		f, e := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o644)
-		if e != nil {
-			logging.Error("Failed to create settings file: " + e.Error())
-		}
-		if e := toml.NewEncoder(f).Encode(def); e != nil {
-			logging.Error("Failed to encode default settings: " + e.Error())
-		}
-		if e := f.Close(); e != nil {
-			logging.Error("Failed to close settings file: " + e.Error())
+		// Read the template file from the source directory (relative path)
+		_, filename, _, _ := runtime.Caller(0)
+		templatePath := filepath.Join(filepath.Dir(filename), "settings.template.toml")
+		templateContent, readErr := os.ReadFile(templatePath)
+		if readErr != nil {
+			logging.Error("Failed to read settings template: " + readErr.Error())
+		} else {
+			f, e := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o644)
+			if e != nil {
+				logging.Error("Failed to create settings file: " + e.Error())
+			} else {
+				if _, writeErr := f.Write(templateContent); writeErr != nil {
+					logging.Error("Failed to write template to settings file: " + writeErr.Error())
+				}
+				if e := f.Close(); e != nil {
+					logging.Error("Failed to close settings file: " + e.Error())
+				}
+			}
 		}
 	}
 	return path, nil
