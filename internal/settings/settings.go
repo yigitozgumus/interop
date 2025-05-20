@@ -7,7 +7,6 @@ import (
 	"interop/internal/logging"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 
@@ -260,6 +259,87 @@ func SetPathConfig(config PathConfig) {
 	err = nil
 }
 
+// defaultSettingsTemplate is the embedded template for the settings file.
+// This avoids issues with missing template files and makes the binary self-contained.
+var defaultSettingsTemplate = `# Interop Settings Template
+# This file documents all available configuration options for Interop.
+# Uncomment and edit the fields you wish to configure.
+
+# =====================
+# GLOBAL SETTINGS
+# =====================
+
+# log_level = "warning"         # Options: error, warning, verbose
+# executable_search_paths = [   # Additional directories to search for executables
+#   "~/.local/bin",
+#   "~/bin"
+# ]
+# mcp_port = 8081               # Default port for the main MCP server
+
+# =====================
+# MCP SERVER CONFIGURATION
+# =====================
+
+#[mcp_servers.example]
+#name = "example"               # Unique name for this MCP server (must match the key)
+#description = "Example domain-specific server"
+#port = 8082                    # Port for this MCP server
+
+# =====================
+# PROJECT DEFINITIONS
+# =====================
+
+#[projects.sample_project]
+#path = "~/projects/sample"     # Path to the project directory (must be inside $HOME)
+#description = "Sample project for demonstration"
+#commands = [                   # List of commands for this project (with optional aliases)
+#  { command_name = "build", alias = "b" },
+#  { command_name = "test" }
+#]
+
+# =====================
+# COMMAND DEFINITIONS
+# =====================
+
+#[commands.build]
+#cmd = "go build ./..."         # The shell command or executable to run
+#description = "Build the project"
+#is_enabled = true              # Enable or disable this command
+#is_executable = false          # If true, run as an executable; if false, run in shell
+#mcp = "example"                # (Optional) Assign this command to a specific MCP server
+#arguments = [                  # (Optional) List of arguments for this command
+#  { name = "output_file", type = "string", description = "Output file name", required = true },
+#  { name = "package", type = "string", description = "Package to build", default = "./cmd/app" }
+#]
+
+#[commands.test]
+#cmd = "go test ./..."
+#description = "Run tests"
+#is_enabled = true
+#is_executable = false
+
+#[commands.deploy]
+#cmd = "deploy.sh"
+#description = "Deploy the project"
+#is_enabled = true
+#is_executable = true
+#mcp = "example"
+
+# =====================
+# COMMAND ARGUMENT TYPES
+# =====================
+# type: string | number | bool
+# Example:
+# arguments = [
+#   { name = "type", type = "string", description = "Component type", required = true },
+#   { name = "force", type = "bool", description = "Overwrite if exists", default = false }
+# ]
+
+# =====================
+# END OF TEMPLATE
+# =====================
+`
+
 // validate() guarantees ~/.settings/interop/settings.toml exists and
 // returns its absolute path.
 func validate() (string, error) {
@@ -286,23 +366,17 @@ func validate() (string, error) {
 	}
 
 	if _, e := os.Stat(path); errors.Is(e, os.ErrNotExist) {
-		// Read the template file from the source directory (relative path)
-		_, filename, _, _ := runtime.Caller(0)
-		templatePath := filepath.Join(filepath.Dir(filename), "settings.template.toml")
-		templateContent, readErr := os.ReadFile(templatePath)
-		if readErr != nil {
-			logging.Error("Failed to read settings template: " + readErr.Error())
+		// Use the embedded template instead of reading from a file
+		// This avoids issues with missing template files
+		f, e := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o644)
+		if e != nil {
+			logging.Error("Failed to create settings file: " + e.Error())
 		} else {
-			f, e := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o644)
-			if e != nil {
-				logging.Error("Failed to create settings file: " + e.Error())
-			} else {
-				if _, writeErr := f.Write(templateContent); writeErr != nil {
-					logging.Error("Failed to write template to settings file: " + writeErr.Error())
-				}
-				if e := f.Close(); e != nil {
-					logging.Error("Failed to close settings file: " + e.Error())
-				}
+			if _, writeErr := f.Write([]byte(defaultSettingsTemplate)); writeErr != nil {
+				logging.Error("Failed to write template to settings file: " + writeErr.Error())
+			}
+			if e := f.Close(); e != nil {
+				logging.Error("Failed to close settings file: " + e.Error())
 			}
 		}
 	}
