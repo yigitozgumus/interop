@@ -152,19 +152,34 @@ func (f *Factory) createShellCommand(name string, config settings.CommandConfig,
 
 // createExecutableCommand creates an executable command from configuration
 func (f *Factory) createExecutableCommand(name string, config settings.CommandConfig, workDir string) (*Command, error) {
+	// Split command and arguments
+	cmdParts := strings.Fields(config.Cmd)
+	if len(cmdParts) == 0 {
+		return nil, errors.NewCommandError(
+			"Empty command provided",
+			nil,
+			true,
+		)
+	}
+
+	execName := cmdParts[0]
+	cmdArgs := cmdParts[1:]
+
 	// Find the executable in search paths
 	var execPath string
 	for _, dir := range f.SearchDirs {
-		path := filepath.Join(dir, config.Cmd)
+		path := filepath.Join(dir, execName)
+		logging.Message("Checking path: %s", path)
 		if _, err := os.Stat(path); err == nil {
 			execPath = path
 			break
 		}
 	}
+	logging.Message("Executable path: %s", execPath)
 
 	if execPath == "" {
 		return nil, errors.NewCommandError(
-			fmt.Sprintf("Executable '%s' not found in search paths", config.Cmd),
+			fmt.Sprintf("Executable '%s' not found in search paths", execName),
 			nil,
 			true,
 		)
@@ -174,7 +189,7 @@ func (f *Factory) createExecutableCommand(name string, config settings.CommandCo
 		Name:        name,
 		Description: config.Description,
 		Path:        execPath,
-		Args:        []string{},
+		Args:        cmdArgs, // Use the parsed arguments
 		Dir:         workDir,
 		Type:        ExecutableCommand,
 		Enabled:     config.IsEnabled,

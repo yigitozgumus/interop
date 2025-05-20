@@ -492,6 +492,7 @@ func GetExecutableSearchPaths(cfg *Settings) ([]string, error) {
 		}
 	}
 
+	logging.Message("Executable search paths: %v", paths)
 	return paths, nil
 }
 
