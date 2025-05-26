@@ -460,7 +460,10 @@ func (s *MCPLibServer) executeCommand(name, cmdStr string, args map[string]inter
 		}
 	}
 
-	// First pass: replace argument placeholders with their values
+	// Create a slice for arguments that use prefixes
+	var prefixedArgs []string
+
+	// Process arguments
 	for _, argDef := range cmdConfig.Arguments {
 		// Get the value (using default if not provided)
 		value, err := cmdConfig.GetArgumentValue(argDef.Name, args)
@@ -468,10 +471,11 @@ func (s *MCPLibServer) executeCommand(name, cmdStr string, args map[string]inter
 			return "", fmt.Errorf("error getting argument value: %w", err)
 		}
 
-		// If the value is nil (not provided and no default), skip replacement
+		// If the value is nil (not provided and no default), skip
 		if value == nil {
 			continue
 		}
+		logging.Message("Processing argument: %s", argDef.Name)
 
 		// Convert value to string based on type
 		var valueStr string
@@ -488,9 +492,24 @@ func (s *MCPLibServer) executeCommand(name, cmdStr string, args map[string]inter
 			valueStr = fmt.Sprintf("%v", value)
 		}
 
-		// Replace placeholder
-		placeholder := "${" + argDef.Name + "}"
-		processedCmd = strings.ReplaceAll(processedCmd, placeholder, valueStr)
+		// Check if this argument has a prefix
+		if argDef.Prefix != "" {
+			logging.Message("Adding prefixed argument: %s %s", argDef.Prefix, valueStr)
+			// Add to prefixed arguments list
+			if argDef.Type == settings.ArgumentTypeBool {
+				// For boolean arguments, only add the flag if true
+				if valueStr == "true" {
+					prefixedArgs = append(prefixedArgs, argDef.Prefix)
+				}
+			} else {
+				// For other types, add both prefix and value
+				prefixedArgs = append(prefixedArgs, fmt.Sprintf("%s %s", argDef.Prefix, valueStr))
+			}
+		} else {
+			// For non-prefixed arguments, use the traditional placeholder replacement
+			placeholder := "${" + argDef.Name + "}"
+			processedCmd = strings.ReplaceAll(processedCmd, placeholder, valueStr)
+		}
 	}
 
 	// Second pass: handle any non-defined arguments (for backward compatibility)
@@ -511,6 +530,11 @@ func (s *MCPLibServer) executeCommand(name, cmdStr string, args map[string]inter
 		placeholder := "${" + key + "}"
 		valueStr := fmt.Sprintf("%v", value)
 		processedCmd = strings.ReplaceAll(processedCmd, placeholder, valueStr)
+	}
+
+	// Append prefixed arguments to the command
+	if len(prefixedArgs) > 0 {
+		processedCmd = fmt.Sprintf("%s %s", processedCmd, strings.Join(prefixedArgs, " "))
 	}
 
 	s.logInfo("Executing command: %s (%s)", originalName, processedCmd)

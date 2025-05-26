@@ -50,6 +50,7 @@ type CommandArgument struct {
 	Description string       `toml:"description,omitempty"` // Description of the argument
 	Required    bool         `toml:"required,omitempty"`    // Whether the argument is required
 	Default     interface{}  `toml:"default,omitempty"`     // Default value if not provided
+	Prefix      string       `toml:"prefix,omitempty"`      // Prefix to use for the argument (e.g. "--keys")
 }
 
 // CommandConfig represents a command that can be executed
@@ -131,6 +132,11 @@ func (c *CommandConfig) UnmarshalTOML(data interface{}) error {
 
 					if def, ok := argMap["default"]; ok {
 						argument.Default = def
+					}
+
+					// Add prefix handling
+					if prefix, ok := argMap["prefix"].(string); ok {
+						argument.Prefix = prefix
 					}
 
 					c.Arguments = append(c.Arguments, argument)
@@ -325,6 +331,15 @@ var defaultSettingsTemplate = `# Interop Settings Template
 #is_executable = true
 #mcp = "example"
 
+# Example command with prefixed arguments
+#[commands.script]
+#cmd = "python scripts/myscript.py"
+#description = "Run a Python script with prefixed arguments"
+#arguments = [
+#  { name = "keys", type = "string", description = "Keys to process", required = false, prefix = "--keys" },
+#  { name = "language", type = "string", description = "Language code", required = false, prefix = "--language" }
+#]
+
 # =====================
 # COMMAND ARGUMENT TYPES
 # =====================
@@ -334,6 +349,17 @@ var defaultSettingsTemplate = `# Interop Settings Template
 #   { name = "type", type = "string", description = "Component type", required = true },
 #   { name = "force", type = "bool", description = "Overwrite if exists", default = false }
 # ]
+
+# =====================
+# PREFIX ARGUMENTS
+# =====================
+# Use the 'prefix' field to specify command-line prefixes for arguments.
+# For example:
+# arguments = [
+#   { name = "verbose", type = "bool", description = "Enable verbose output", prefix = "--verbose" },
+#   { name = "keys", type = "string", description = "Keys to process", prefix = "--keys" }
+# ]
+# This will generate commands like: my-command --verbose --keys value
 
 # =====================
 # END OF TEMPLATE

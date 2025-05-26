@@ -199,6 +199,7 @@ func (f *Factory) createExecutableCommand(name string, config settings.CommandCo
 // RunWithArgs executes the command with additional arguments
 func (c *Command) RunWithArgs(args []string) error {
 	logging.Message("Running command: %s with args: %v in directory: %s", c.Name, args, c.Dir)
+
 	// Set up command execution
 	cmd := &execution.Command{
 		Path: c.Path,
@@ -206,7 +207,81 @@ func (c *Command) RunWithArgs(args []string) error {
 		Dir:  c.Dir,
 	}
 
-	// Add additional arguments if provided
+	// Get the command configuration to check for prefixed arguments
+	cfg, err := settings.Load()
+	if err != nil {
+		logging.Warning("Failed to load settings for prefixed arguments: %v", err)
+		// Continue with normal argument handling
+	} else {
+		// Get the command config to check for prefixed arguments
+		cmdConfig, exists := cfg.Commands[c.Name]
+		if exists && len(cmdConfig.Arguments) > 0 && len(args) > 0 {
+			// Parse args into a map
+			argsMap := make(map[string]string)
+
+			// Handle args as name=value pairs
+			for _, arg := range args {
+				if strings.Contains(arg, "=") {
+					parts := strings.SplitN(arg, "=", 2)
+					if len(parts) == 2 {
+						argsMap[parts[0]] = parts[1]
+					}
+				}
+			}
+
+			// If we have prefixed arguments defined and args were provided as name=value pairs
+			if len(argsMap) > 0 {
+				// For shell commands, we'll construct a new command string with prefixes
+				if c.Type == ShellCommand && len(cmd.Args) >= 2 {
+					baseCmd := cmd.Args[1]
+					var prefixedArgs []string
+
+					// Process each argument definition
+					for _, argDef := range cmdConfig.Arguments {
+						// If this argument has a prefix and was provided
+						if argDef.Prefix != "" {
+							if value, ok := argsMap[argDef.Name]; ok {
+								// For boolean arguments, only add the flag if true
+								if argDef.Type == settings.ArgumentTypeBool {
+									if value == "true" {
+										prefixedArgs = append(prefixedArgs, argDef.Prefix)
+									}
+								} else {
+									// For other types, add both prefix and value
+									prefixedArgs = append(prefixedArgs, fmt.Sprintf("%s %s", argDef.Prefix, value))
+								}
+								// Remove from argsMap to track which ones we've processed
+								delete(argsMap, argDef.Name)
+							}
+						}
+					}
+
+					// Append any remaining arguments (without prefixes)
+					var standardArgs []string
+					for name, value := range argsMap {
+						standardArgs = append(standardArgs, fmt.Sprintf("%s=%s", name, value))
+					}
+
+					// Combine the command parts
+					newCmd := baseCmd
+					if len(prefixedArgs) > 0 {
+						newCmd = fmt.Sprintf("%s %s", newCmd, strings.Join(prefixedArgs, " "))
+					}
+					if len(standardArgs) > 0 {
+						newCmd = fmt.Sprintf("%s %s", newCmd, strings.Join(standardArgs, " "))
+					}
+
+					logging.Message("Command with prefixed args: %s", newCmd)
+					cmd.Args[1] = newCmd
+
+					// We've handled the arguments, so return early
+					return execution.NewExecutor().Execute(cmd)
+				}
+			}
+		}
+	}
+
+	// If we didn't handle prefixed arguments, fall back to standard behavior
 	if c.Type == ExecutableCommand && args != nil && len(args) > 0 {
 		// For executable commands, add arguments directly
 		cmd.Args = append(cmd.Args, args...)

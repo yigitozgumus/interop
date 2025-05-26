@@ -335,6 +335,7 @@ arguments = [
 - **Required**: Mark arguments that must be provided
 - **Default Values**: Set fallback values for optional arguments
 - **Descriptions**: Document the purpose of each argument
+- **Prefix**: Specify command-line flags to use for arguments (e.g., `--key`)
 
 ### Using Arguments
 
@@ -345,6 +346,45 @@ interop run generate type=component name=Button
 # Positional arguments (in order of definition)
 interop run generate component Button true
 ```
+
+### Prefixed Arguments
+
+Prefixed arguments allow you to define command-line arguments with specific prefixes (such as `--keys` or `-f`). This is especially useful when working with scripts or tools that expect arguments in a specific format:
+
+```toml
+[commands.update-strings]
+cmd="python3 scripts/update_strings.py"
+description="Update localization strings"
+arguments=[
+  {name = "keys", type="string", required = false, description = "Keys to update", prefix = "--keys"},
+  {name = "language", type="string", required = false, description = "Language code", prefix = "--language"},
+  {name = "verbose", type="bool", required = false, description = "Verbose output", prefix = "--verbose"}
+]
+```
+
+When executing:
+```bash
+interop run update-strings --keys "key1 key2" --language en --verbose true
+```
+
+The actual command executed will be:
+```bash
+python3 scripts/update_strings.py --keys key1 key2 --language en --verbose
+```
+
+#### How Prefixed Arguments Work
+
+1. For arguments with prefixes: Interop appends them to the command with their prefixes
+2. For arguments without prefixes: Interop substitutes them in the command string using `${arg_name}` placeholders
+3. Boolean arguments with prefixes: If the value is `true`, only the prefix is added; otherwise, the argument is omitted
+4. Non-boolean arguments with prefixes: The prefix and value are added together
+
+#### Benefits of Prefixed Arguments
+
+- Works consistently across all shells (bash, fish, zsh, etc.)
+- Arguments can be provided in any order
+- No need to escape special characters in argument values
+- Compatible with tools that require specific argument formats
 
 ## Validation & Diagnostics
 
