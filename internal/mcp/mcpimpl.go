@@ -283,39 +283,7 @@ func (s *MCPLibServer) registerCommandTools(serverName string) {
 
 	s.logInfo("Registered MCP commands tool")
 
-	// Add a simple ping tool that responds with pong - often expected by clients
-	pingTool := mcp.NewTool(
-		"ping",
-		mcp.WithDescription("Simple ping/pong tool to check server responsiveness"),
-	)
 
-	s.mcpServer.AddTool(pingTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		return mcp.NewToolResultText("pong"), nil
-	})
-
-	s.logInfo("Registered ping tool")
-
-	// Add an echo tool - standard for MCP servers
-	echoTool := mcp.NewTool(
-		"echo",
-		mcp.WithDescription("Echo back the input message"),
-		mcp.WithString("message",
-			mcp.Description("Message to echo back"),
-		),
-	)
-
-	s.mcpServer.AddTool(echoTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		message := "Hello, world!"
-		if msgValue, ok := request.Params.Arguments["message"]; ok {
-			if msgStr, ok := msgValue.(string); ok {
-				message = msgStr
-			}
-		}
-
-		return mcp.NewToolResultText(sanitizeOutput(message)), nil
-	})
-
-	s.logInfo("Registered echo tool")
 }
 
 // registerSingleCommandTool registers a single command as an MCP tool
