@@ -292,6 +292,17 @@ var defaultSettingsTemplate = `# Interop Settings Template
 #port = 8082                    # Port for this MCP server
 
 # =====================
+# MCP TOOLS & GLOBAL COMMANDS
+# =====================
+# Global commands (commands not bound to any project) automatically receive
+# an optional "project_path" parameter when exposed as MCP tools.
+# This allows AI assistants to specify a working directory for the command,
+# making global commands work like project-bound commands when needed.
+#
+# Example: A global "build" command can be run in any project directory by
+# providing the project_path parameter to the MCP tool.
+
+# =====================
 # PROJECT DEFINITIONS
 # =====================
 

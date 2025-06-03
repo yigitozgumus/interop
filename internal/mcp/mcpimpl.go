@@ -287,9 +287,19 @@ func (s *MCPLibServer) registerCommandTools(serverName string) {
 
 // registerSingleCommandTool registers a single command as an MCP tool
 func (s *MCPLibServer) registerSingleCommandTool(name string, cmdConfig settings.CommandConfig) {
+	// Determine if this command is global (not bound to any project)
+	isGlobalCommand := s.isGlobalCommand(name)
+
 	// Create tool options
 	toolOptions := []mcp.ToolOption{
 		mcp.WithDescription(cmdConfig.Description),
+	}
+
+	// Add project_path parameter for global commands
+	if isGlobalCommand {
+		toolOptions = append(toolOptions,
+			mcp.WithString("project_path", mcp.Description("Optional path to project directory where the command should be executed. If provided, the command will run in this directory context, similar to project-bound commands.")),
+		)
 	}
 
 	if len(cmdConfig.Arguments) > 0 {
@@ -360,6 +370,19 @@ func (s *MCPLibServer) registerSingleCommandTool(name string, cmdConfig settings
 			}
 		}
 
+		// For global commands, check if project_path is provided
+		if isGlobalCommand {
+			if pathValue, ok := request.Params.Arguments["project_path"]; ok {
+				if pathStr, ok := pathValue.(string); ok && pathStr != "" {
+					// Add project_path to args so executeCommand can access it
+					if args == nil {
+						args = make(map[string]interface{})
+					}
+					args["project_path"] = pathStr
+				}
+			}
+		}
+
 		// Execute the command - use the actual command name from settings
 		result, err := s.executeCommand(name, cmdConfig.Cmd, args)
 		if err != nil {
@@ -371,6 +394,24 @@ func (s *MCPLibServer) registerSingleCommandTool(name string, cmdConfig settings
 	})
 
 	s.logInfo("Registered MCP tool for command: %s", name)
+}
+
+// isGlobalCommand checks if a command is global (not bound to any project)
+func (s *MCPLibServer) isGlobalCommand(commandName string) bool {
+	cfg, err := settings.Load()
+	if err != nil {
+		return true // Assume global if we can't load config
+	}
+
+	// Check all projects to see if this command is bound to any
+	for _, project := range cfg.Projects {
+		for _, cmd := range project.Commands {
+			if cmd.CommandName == commandName || cmd.Alias == commandName {
+				return false // Command is bound to a project
+			}
+		}
+	}
+	return true // Command not found in any project, so it's global
 }
 
 // executeCommand runs a command and returns its output
@@ -406,7 +447,27 @@ func (s *MCPLibServer) executeCommand(name, cmdStr string, args map[string]inter
 	// Check if command has a project context
 	var projectPath string
 
-	// If no project path in args, try to find the associated project
+	// For global commands, check if project_path was provided as an argument
+	if projectPathArg, ok := args["project_path"]; ok {
+		if pathStr, ok := projectPathArg.(string); ok && pathStr != "" {
+			// Expand tilde if needed
+			if strings.HasPrefix(pathStr, "~/") {
+				if homeDir, err := os.UserHomeDir(); err == nil {
+					projectPath = filepath.Join(homeDir, pathStr[2:])
+				} else {
+					projectPath = pathStr
+				}
+			} else {
+				projectPath = pathStr
+			}
+			s.logInfo("Using provided project path for global command %s: %s", originalName, projectPath)
+
+			// Remove project_path from args since it's not a command argument
+			delete(args, "project_path")
+		}
+	}
+
+	// If no project path provided in args, try to find the associated project
 	if projectPath == "" {
 		cfg, err := settings.Load()
 		if err == nil {
