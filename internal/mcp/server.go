@@ -21,6 +21,7 @@ type Server struct {
 	LogFile string
 	Name    string // Server name, empty for default
 	Port    int    // Server port
+	Mode    string // Server mode, empty for default
 }
 
 // ServerManager manages multiple MCP servers
@@ -77,11 +78,23 @@ func NewServer(name string, port int) (*Server, error) {
 		prefix = name
 	}
 
+	// Get server mode from environment variable or default to "sse"
+	mode := os.Getenv("MCP_SERVER_MODE")
+	if mode == "" {
+		mode = "sse"
+	}
+
+	// Validate server mode
+	if mode != "stdio" && mode != "sse" {
+		return nil, fmt.Errorf("invalid server mode: %s, must be either 'stdio' or 'sse'", mode)
+	}
+
 	return &Server{
 		PidFile: filepath.Join(mcpDir, prefix+".pid"),
 		LogFile: filepath.Join(mcpDir, prefix+".log"),
 		Name:    name,
 		Port:    port,
+		Mode:    mode,
 	}, nil
 }
 
@@ -118,10 +131,11 @@ func (s *Server) Start() error {
 	// Prepare command to run server in daemon mode with port and name
 	cmd := exec.Command(executable, "mcp", "daemon")
 
-	// Add server name and port as environment variables
+	// Add server name, port and mode as environment variables
 	cmd.Env = append(os.Environ(),
 		fmt.Sprintf("MCP_SERVER_NAME=%s", s.Name),
-		fmt.Sprintf("MCP_SERVER_PORT=%d", s.Port))
+		fmt.Sprintf("MCP_SERVER_PORT=%d", s.Port),
+		fmt.Sprintf("MCP_SERVER_MODE=%s", s.Mode))
 
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
@@ -148,8 +162,10 @@ func (s *Server) Start() error {
 		serverType = fmt.Sprintf("MCP server '%s'", s.Name)
 	}
 
-	logging.Message("%s started with PID %d", serverType, pid)
-	logging.Message("HTTP server available at http://localhost:%d", s.Port)
+	logging.Message("%s started with PID %d in %s mode", serverType, pid, s.Mode)
+	if s.Mode == "sse" {
+		logging.Message("HTTP server available at http://localhost:%d", s.Port)
+	}
 	return nil
 }
 

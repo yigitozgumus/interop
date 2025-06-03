@@ -30,6 +30,7 @@ type MCPLibServer struct {
 	commandConfig  map[string]settings.CommandConfig
 	promptConfig   map[string]settings.PromptConfig
 	commandAliases map[string]string // Maps alias -> original command name
+	serverMode     string            // "stdio" or "sse"
 }
 
 // sanitizeOutput ensures there are no ANSI color codes in the output
@@ -57,8 +58,17 @@ func NewMCPLibServer() (*MCPLibServer, error) {
 		return nil, fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	// Get server name and port from environment variables if available
+	// Get server name, port and mode from environment variables if available
 	serverName := os.Getenv("MCP_SERVER_NAME")
+	serverMode := os.Getenv("MCP_SERVER_MODE")
+	if serverMode == "" {
+		serverMode = "sse" // Default to SSE mode if not specified
+	}
+
+	// Validate server mode
+	if serverMode != "stdio" && serverMode != "sse" {
+		return nil, fmt.Errorf("invalid server mode: %s, must be either 'stdio' or 'sse'", serverMode)
+	}
 
 	// Determine the port to use
 	var port int
@@ -148,6 +158,7 @@ func NewMCPLibServer() (*MCPLibServer, error) {
 		commandConfig:  cfg.Commands,
 		promptConfig:   cfg.Prompts,
 		commandAliases: make(map[string]string),
+		serverMode:     serverMode,
 	}
 
 	// Register tools based on available commands for this server
@@ -785,14 +796,20 @@ func (s *MCPLibServer) executeCommandWithPath(name, cmdStr string, args map[stri
 	return sanitizeOutput(string(output)), nil
 }
 
-// Start starts the MCP server with HTTP and SSE
+// Start starts the MCP server in either stdio or SSE mode
 func (s *MCPLibServer) Start() error {
-	s.logInfo("Starting MCP server with HTTP on port %d", s.port)
+	s.logInfo("Starting MCP server in %s mode", s.serverMode)
 
 	// Ensure colors are disabled again just before starting server
 	logging.DisableColors()
 
-	// Use this server's configured port, not the default
+	if s.serverMode == "stdio" {
+		// In stdio mode, we don't need to start an HTTP server
+		// The server will communicate through stdin/stdout
+		return nil
+	}
+
+	// In SSE mode, start the HTTP server
 	if err := s.sseServer.Start(fmt.Sprintf(":%d", s.port)); err != nil {
 		err = fmt.Errorf("failed to start SSE server: %w", err)
 		logging.Error("%v", err)
@@ -814,14 +831,16 @@ func (s *MCPLibServer) Stop() error {
 		s.logFile.Close()
 	}
 
-	// Gracefully shutdown the HTTP server
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	if s.serverMode == "sse" {
+		// Gracefully shutdown the HTTP server
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 
-	if err := s.sseServer.Shutdown(ctx); err != nil {
-		err = fmt.Errorf("failed to shutdown HTTP server: %w", err)
-		logging.Error("%v", err)
-		return err
+		if err := s.sseServer.Shutdown(ctx); err != nil {
+			err = fmt.Errorf("failed to shutdown HTTP server: %w", err)
+			logging.Error("%v", err)
+			return err
+		}
 	}
 
 	return nil

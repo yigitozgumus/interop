@@ -135,6 +135,7 @@ func main() {
 	// Define flags for MCP commands
 	var allServers bool
 	var serverName string
+	var serverMode string
 
 	// MCP start command
 	mcpStartCmd := &cobra.Command{
@@ -153,6 +154,11 @@ func main() {
 				allServers = true
 			}
 
+			// Set server mode in environment
+			if serverMode != "" {
+				os.Setenv("MCP_SERVER_MODE", serverMode)
+			}
+
 			if err := mcp.StartServer(serverName, allServers); err != nil {
 				logging.ErrorAndExit("Failed to start MCP server: %v", err)
 			}
@@ -160,6 +166,7 @@ func main() {
 	}
 	mcpStartCmd.Flags().BoolVarP(&allServers, "all", "a", true, "Start all MCP servers (default)")
 	mcpStartCmd.Flags().StringVarP(&serverName, "server", "s", "", "Specific MCP server to start")
+	mcpStartCmd.Flags().StringVar(&serverMode, "mode", "sse", "Server mode (stdio or sse)")
 	mcpCmd.AddCommand(mcpStartCmd)
 
 	// MCP stop command
