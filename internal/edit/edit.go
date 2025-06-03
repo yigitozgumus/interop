@@ -9,8 +9,9 @@ import (
 	"path/filepath"
 )
 
-// OpenSettings opens the settings file using the editor specified in $EDITOR environment variable
-func OpenSettings() error {
+// OpenSettings opens the settings file using the specified editor or defaults to $EDITOR environment variable
+// If editorName is empty, it will use the editor from $EDITOR environment variable or fall back to nano
+func OpenSettings(editorName string) error {
 	// Find the settings file path
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -22,11 +23,18 @@ func OpenSettings() error {
 	base := filepath.Join(config, settings.DefaultPathConfig.AppDir)
 	settingsPath := filepath.Join(base, settings.DefaultPathConfig.CfgFile)
 
-	// Get the editor from environment variable
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		// Default to common editors if $EDITOR is not set
-		editor = "nano" // Simple default that's often available
+	// Determine which editor to use
+	var editor string
+	if editorName != "" {
+		// Use the editor specified via the --editor flag
+		editor = editorName
+	} else {
+		// Fall back to the original behavior: check $EDITOR environment variable
+		editor = os.Getenv("EDITOR")
+		if editor == "" {
+			// Default to common editors if $EDITOR is not set
+			editor = "nano" // Simple default that's often available
+		}
 	}
 
 	logging.Message(fmt.Sprintf("Opening settings file with %s: %s", editor, settingsPath))

@@ -103,16 +103,23 @@ func main() {
 
 	rootCmd.AddCommand(runCmd) // Add run as a top-level command for easier access
 
+	// Define flag variable for the editor
+	var editorName string
+
 	editCmd := &cobra.Command{
 		Use:   "edit",
-		Short: "Edit the configuration file with your default editor",
+		Short: "Edit the configuration file with your default editor or specified editor",
+		Long:  "Edit the configuration file using the editor specified by --editor flag, $EDITOR environment variable, or nano as fallback",
 		Run: func(cmd *cobra.Command, args []string) {
-			err := edit.OpenSettings()
+			err := edit.OpenSettings(editorName)
 			if err != nil {
 				logging.ErrorAndExit(fmt.Sprintf("Failed to open settings file: %v", err))
 			}
 		},
 	}
+
+	// Add the --editor flag to the edit command
+	editCmd.Flags().StringVar(&editorName, "editor", "", "Editor to use for opening the configuration file (e.g., code, vim, nano)")
 
 	rootCmd.AddCommand(editCmd)
 

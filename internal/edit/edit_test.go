@@ -41,7 +41,8 @@ exit 0
 		// This is more of a smoke test
 		t.Skip("Skipping actual execution in unit tests")
 
-		err := OpenSettings()
+		// Pass empty string to use environment variable behavior (original behavior)
+		err := OpenSettings("")
 		if err != nil {
 			t.Errorf("OpenSettings() returned an error: %v", err)
 		}
