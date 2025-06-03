@@ -282,6 +282,8 @@ func main() {
 					fmt.Printf("MCP Server: default\n")
 				}
 
+				fmt.Printf("Content:\n%s\n", prompt.Content)
+
 				if len(prompt.Arguments) > 0 {
 					fmt.Printf("Arguments:\n")
 					for _, arg := range prompt.Arguments {

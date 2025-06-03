@@ -399,19 +399,16 @@ func (s *MCPLibServer) registerPrompts(serverName string) {
 			}
 
 			// Create the prompt content based on configuration and arguments
-			var promptText string
-			if len(processedArgs) > 0 {
-				// Create a more detailed prompt that includes the argument values
-				promptText = fmt.Sprintf("This is the %s prompt. %s\n\nProvided arguments:",
-					promptConfig.Name, promptConfig.Description)
+			promptText := promptConfig.Content
 
+			// Perform template substitution if arguments are provided
+			if len(processedArgs) > 0 {
+				// Replace argument placeholders in the content
 				for key, value := range processedArgs {
-					promptText += fmt.Sprintf("\n- %s: %v", key, value)
+					placeholder := "{" + key + "}"
+					replacement := fmt.Sprintf("%v", value)
+					promptText = strings.ReplaceAll(promptText, placeholder, replacement)
 				}
-			} else {
-				// Basic prompt without arguments
-				promptText = fmt.Sprintf("This is the %s prompt. %s",
-					promptConfig.Name, promptConfig.Description)
 			}
 
 			// Create the prompt result with the configured description and processed content

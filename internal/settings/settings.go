@@ -227,6 +227,7 @@ func getBoolWithDefault(m map[string]interface{}, key string, defaultValue bool)
 type PromptConfig struct {
 	Name        string            `toml:"name"`                // Name of the prompt
 	Description string            `toml:"description"`         // Description of what the prompt does
+	Content     string            `toml:"content"`             // The actual prompt content/template
 	MCP         string            `toml:"mcp,omitempty"`       // Optional MCP server name this prompt belongs to
 	Arguments   []CommandArgument `toml:"arguments,omitempty"` // Argument definitions for the prompt
 }
@@ -314,6 +315,22 @@ var defaultSettingsTemplate = `# Interop Settings Template
 #[prompts.create_merge_request]
 #name = "create_merge_request"
 #description = "Complete MR creation workflow: analyzes branch changes, generates MR description, and creates the merge request"
+#content = """
+#You are helping create a merge request. Follow this workflow:
+#
+#1. **Analyze Branch Changes**: First, run the generate-cursor-prompt-for-mr command with target branch: {target_branch}
+#2. **Review the Analysis**: Read the generated analysis and create an appropriate MR title: {mr_title}
+#3. **Generate MR Description**: Based on the analysis, create a detailed MR description
+#4. **Create the MR**: Run the create-mr command with the temp directory from step 1
+#
+#Include detailed changes: {include_detailed_changes}
+#
+#Make sure to:
+#- Use clear, descriptive titles
+#- Include context about what changed and why
+#- Reference any related issues or tickets
+#- Follow the team's MR guidelines
+#"""
 #arguments = [
 #  { name = "target_branch", type = "string", description = "The branch you want to merge into", required = true },
 #  { name = "mr_title", type = "string", description = "Title for the merge request", default = "" },
@@ -324,6 +341,7 @@ var defaultSettingsTemplate = `# Interop Settings Template
 #[prompts.code_review]
 #name = "code_review"           # Name of the prompt (must match the key)
 #description = "Code review assistance prompt"
+#content = "Please review the following {language} code, focusing on {focus_area}. Look for potential issues, improvements, and best practices."
 #mcp = "example"                # (Optional) Assign this prompt to a specific MCP server
 #arguments = [                  # (Optional) Arguments for prompt customization
 #  { name = "language", type = "string", description = "Programming language", required = true },
@@ -333,6 +351,19 @@ var defaultSettingsTemplate = `# Interop Settings Template
 #[prompts.documentation]
 #name = "documentation"         # Name of the prompt (must match the key)  
 #description = "Generate technical documentation"
+#content = """
+#Generate comprehensive technical documentation for {topic}.
+#
+#Include examples: {include_examples}
+#Detail level: {detail_level}/5
+#
+#Structure the documentation with:
+#1. Overview and purpose
+#2. Key concepts and terminology  
+#3. Implementation details
+#4. Usage examples (if requested)
+#5. Best practices and recommendations
+#"""
 #arguments = [                  # Example with different argument types
 #  { name = "topic", type = "string", description = "Documentation topic", required = true },
 #  { name = "include_examples", type = "bool", description = "Include code examples", default = true },
@@ -540,6 +571,10 @@ func ValidateMCPConfig(cfg *Settings) error {
 
 		if prompt.Description == "" {
 			return fmt.Errorf("prompt '%s' must have a description", promptName)
+		}
+
+		if prompt.Content == "" {
+			return fmt.Errorf("prompt '%s' must have content", promptName)
 		}
 
 		// Ensure prompt.Name matches the key
