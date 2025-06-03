@@ -223,10 +223,19 @@ func getBoolWithDefault(m map[string]interface{}, key string, defaultValue bool)
 	return defaultValue
 }
 
+// PromptConfig represents a configured prompt that can be exposed via MCP
+type PromptConfig struct {
+	Name        string            `toml:"name"`                // Name of the prompt
+	Description string            `toml:"description"`         // Description of what the prompt does
+	MCP         string            `toml:"mcp,omitempty"`       // Optional MCP server name this prompt belongs to
+	Arguments   []CommandArgument `toml:"arguments,omitempty"` // Argument definitions for the prompt
+}
+
 type Settings struct {
 	LogLevel              string                   `toml:"log_level"`
 	Projects              map[string]Project       `toml:"projects"`
 	Commands              map[string]CommandConfig `toml:"commands"`
+	Prompts               map[string]PromptConfig  `toml:"prompts"` // Add prompts configuration
 	ExecutableSearchPaths []string                 `toml:"executable_search_paths"`
 	MCPPort               int                      `toml:"mcp_port"`
 	MCPServers            map[string]MCPServer     `toml:"mcp_servers"`
@@ -290,6 +299,46 @@ var defaultSettingsTemplate = `# Interop Settings Template
 #name = "example"               # Unique name for this MCP server (must match the key)
 #description = "Example domain-specific server"
 #port = 8082                    # Port for this MCP server
+
+# =====================
+# MCP PROMPTS
+# =====================
+# Define reusable prompts that MCP clients can access. Prompts are templates
+# that help LLMs interact with your server effectively.
+#
+# Each prompt can be assigned to a specific MCP server using the 'mcp' field.
+# If no 'mcp' field is specified, the prompt will be available on the default server.
+#
+# Prompts can also define arguments that allow customization when the prompt is used.
+
+#[prompts.create_merge_request]
+#name = "create_merge_request"
+#description = "Complete MR creation workflow: analyzes branch changes, generates MR description, and creates the merge request"
+#arguments = [
+#  { name = "target_branch", type = "string", description = "The branch you want to merge into", required = true },
+#  { name = "mr_title", type = "string", description = "Title for the merge request", default = "" },
+#  { name = "include_detailed_changes", type = "bool", description = "Include detailed file changes in description", default = true }
+#]
+# This prompt orchestrates multiple MCP commands in a workflow
+
+#[prompts.code_review]
+#name = "code_review"           # Name of the prompt (must match the key)
+#description = "Code review assistance prompt"
+#mcp = "example"                # (Optional) Assign this prompt to a specific MCP server
+#arguments = [                  # (Optional) Arguments for prompt customization
+#  { name = "language", type = "string", description = "Programming language", required = true },
+#  { name = "focus_area", type = "string", description = "Area to focus on", default = "general" }
+#]
+
+#[prompts.documentation]
+#name = "documentation"         # Name of the prompt (must match the key)  
+#description = "Generate technical documentation"
+#arguments = [                  # Example with different argument types
+#  { name = "topic", type = "string", description = "Documentation topic", required = true },
+#  { name = "include_examples", type = "bool", description = "Include code examples", default = true },
+#  { name = "detail_level", type = "number", description = "Detail level (1-5)", default = 3 }
+#]
+# No 'mcp' field means this prompt is available on the default server
 
 # =====================
 # MCP TOOLS & GLOBAL COMMANDS

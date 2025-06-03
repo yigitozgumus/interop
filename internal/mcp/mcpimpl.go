@@ -28,6 +28,7 @@ type MCPLibServer struct {
 	configDir      string
 	logFile        *os.File
 	commandConfig  map[string]settings.CommandConfig
+	promptConfig   map[string]settings.PromptConfig
 	commandAliases map[string]string // Maps alias -> original command name
 }
 
@@ -131,6 +132,7 @@ func NewMCPLibServer() (*MCPLibServer, error) {
 		serverTitle,
 		"1.0.0",
 		server.WithToolCapabilities(true),
+		server.WithPromptCapabilities(true),
 		server.WithLogging(),
 	)
 
@@ -144,11 +146,15 @@ func NewMCPLibServer() (*MCPLibServer, error) {
 		configDir:      configDir,
 		logFile:        logFile,
 		commandConfig:  cfg.Commands,
+		promptConfig:   cfg.Prompts,
 		commandAliases: make(map[string]string),
 	}
 
 	// Register tools based on available commands for this server
 	s.registerCommandTools(serverName)
+
+	// Register prompts based on configuration for this server
+	s.registerPrompts(serverName)
 
 	// Write initial log message to file only, not stdout
 	if serverName != "" {
@@ -282,7 +288,151 @@ func (s *MCPLibServer) registerCommandTools(serverName string) {
 	})
 
 	s.logInfo("Registered MCP commands tool")
+}
 
+// registerPrompts registers prompts from configuration as MCP prompts
+func (s *MCPLibServer) registerPrompts(serverName string) {
+	// Register prompts for this server
+	for name, promptConfig := range s.promptConfig {
+		// Filter by server name similar to commands
+		if serverName != "" {
+			// For a named server, only add prompts assigned to this server or with no MCP field
+			if promptConfig.MCP != "" && promptConfig.MCP != serverName {
+				// Skip prompts assigned to a different server
+				continue
+			}
+		} else {
+			// For default server, only add prompts with no MCP field
+			if promptConfig.MCP != "" {
+				// Skip prompts assigned to a specific server
+				continue
+			}
+		}
+
+		// Create prompt options starting with description
+		promptOptions := []mcp.PromptOption{
+			mcp.WithPromptDescription(promptConfig.Description),
+		}
+
+		// Add arguments to the prompt if defined
+		if len(promptConfig.Arguments) > 0 {
+			for _, arg := range promptConfig.Arguments {
+				description := arg.Description
+				if arg.Type != settings.ArgumentTypeString {
+					description = fmt.Sprintf("%s (type: %s)", description, arg.Type)
+				}
+
+				// Create argument options
+				argOptions := []mcp.ArgumentOption{
+					mcp.ArgumentDescription(description),
+				}
+
+				// Add required option if argument is required
+				if arg.Required {
+					argOptions = append(argOptions, mcp.RequiredArgument())
+				}
+
+				// Add argument as a prompt argument
+				promptOptions = append(promptOptions,
+					mcp.WithArgument(arg.Name, argOptions...),
+				)
+			}
+		}
+
+		// Create the prompt using the mcp-go library with all options
+		prompt := mcp.NewPrompt(promptConfig.Name, promptOptions...)
+
+		// Add the prompt handler
+		s.mcpServer.AddPrompt(prompt, func(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+			// Process arguments if the prompt has them defined
+			var processedArgs map[string]interface{}
+			if len(promptConfig.Arguments) > 0 {
+				processedArgs = make(map[string]interface{})
+
+				// Validate and process each argument
+				for _, argDef := range promptConfig.Arguments {
+					var value interface{}
+
+					// Get the value from the request arguments
+					if request.Params.Arguments != nil {
+						if argValue, exists := request.Params.Arguments[argDef.Name]; exists {
+							// Arguments come as strings from the request, convert based on expected type
+							switch argDef.Type {
+							case settings.ArgumentTypeNumber:
+								// Convert string to number
+								if numVal, err := strconv.ParseFloat(argValue, 64); err == nil {
+									value = numVal
+								} else {
+									value = argValue
+								}
+							case settings.ArgumentTypeBool:
+								// Convert string to bool
+								if boolVal, err := strconv.ParseBool(argValue); err == nil {
+									value = boolVal
+								} else {
+									value = argValue
+								}
+							default:
+								value = argValue
+							}
+						}
+					}
+
+					// If no value was provided, check if it's required
+					if value == nil {
+						if argDef.Required {
+							if argDef.Default == nil {
+								return nil, fmt.Errorf("required argument '%s' is missing", argDef.Name)
+							}
+							value = argDef.Default
+						} else {
+							// Use default value if available
+							value = argDef.Default
+						}
+					}
+
+					// Store the processed value
+					if value != nil {
+						processedArgs[argDef.Name] = value
+					}
+				}
+			}
+
+			// Create the prompt content based on configuration and arguments
+			var promptText string
+			if len(processedArgs) > 0 {
+				// Create a more detailed prompt that includes the argument values
+				promptText = fmt.Sprintf("This is the %s prompt. %s\n\nProvided arguments:",
+					promptConfig.Name, promptConfig.Description)
+
+				for key, value := range processedArgs {
+					promptText += fmt.Sprintf("\n- %s: %v", key, value)
+				}
+			} else {
+				// Basic prompt without arguments
+				promptText = fmt.Sprintf("This is the %s prompt. %s",
+					promptConfig.Name, promptConfig.Description)
+			}
+
+			// Create the prompt result with the configured description and processed content
+			messages := []mcp.PromptMessage{
+				mcp.NewPromptMessage(
+					mcp.RoleUser,
+					mcp.NewTextContent(promptText),
+				),
+			}
+
+			return mcp.NewGetPromptResult(promptConfig.Description, messages), nil
+		})
+
+		s.logInfo("Registered MCP prompt: %s", name)
+	}
+
+	if len(s.promptConfig) > 0 {
+		s.logInfo("Registered %d MCP prompts", len(s.promptConfig))
+	} else {
+		s.logInfo("No prompts configured for this server")
+	}
 }
 
 // registerSingleCommandTool registers a single command as an MCP tool
@@ -345,25 +495,33 @@ func (s *MCPLibServer) registerSingleCommandTool(name string, cmdConfig settings
 					// Convert values based on the expected type
 					switch arg.Type {
 					case settings.ArgumentTypeNumber:
-						// Try to convert string to number if needed
-						if strVal, ok := value.(string); ok {
-							if numVal, err := strconv.ParseFloat(strVal, 64); err == nil {
+						// Convert to number if needed
+						switch v := value.(type) {
+						case string:
+							if numVal, err := strconv.ParseFloat(v, 64); err == nil {
 								args[arg.Name] = numVal
 							} else {
 								args[arg.Name] = value
 							}
-						} else {
+						case float64:
+							args[arg.Name] = v
+						case int:
+							args[arg.Name] = float64(v)
+						default:
 							args[arg.Name] = value
 						}
 					case settings.ArgumentTypeBool:
-						// Try to convert string to bool if needed
-						if strVal, ok := value.(string); ok {
-							if boolVal, err := strconv.ParseBool(strVal); err == nil {
+						// Convert to bool if needed
+						switch v := value.(type) {
+						case string:
+							if boolVal, err := strconv.ParseBool(v); err == nil {
 								args[arg.Name] = boolVal
 							} else {
 								args[arg.Name] = value
 							}
-						} else {
+						case bool:
+							args[arg.Name] = v
+						default:
 							args[arg.Name] = value
 						}
 					default:
