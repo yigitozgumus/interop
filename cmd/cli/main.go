@@ -252,6 +252,65 @@ func main() {
 	}
 	mcpCmd.AddCommand(mcpExportCmd)
 
+	// MCP prompts command
+	mcpPromptsCmd := &cobra.Command{
+		Use:   "prompts",
+		Short: "List all configured prompts",
+		Run: func(cmd *cobra.Command, args []string) {
+			// Load configuration to get prompts
+			cfg, err := settings.Load()
+			if err != nil {
+				logging.ErrorAndExit("Failed to load settings: %v", err)
+			}
+
+			if len(cfg.Prompts) == 0 {
+				fmt.Println("No prompts configured.")
+				return
+			}
+
+			fmt.Println("Configured Prompts:")
+			fmt.Println("==================")
+			fmt.Println()
+
+			for name, prompt := range cfg.Prompts {
+				fmt.Printf("Name: %s\n", name)
+				fmt.Printf("Description: %s\n", prompt.Description)
+
+				if prompt.MCP != "" {
+					fmt.Printf("MCP Server: %s\n", prompt.MCP)
+				} else {
+					fmt.Printf("MCP Server: default\n")
+				}
+
+				if len(prompt.Arguments) > 0 {
+					fmt.Printf("Arguments:\n")
+					for _, arg := range prompt.Arguments {
+						typeStr := string(arg.Type)
+						if typeStr == "" {
+							typeStr = "string"
+						}
+
+						requiredStr := ""
+						if arg.Required {
+							requiredStr = " (required)"
+						}
+
+						defaultStr := ""
+						if arg.Default != nil {
+							defaultStr = fmt.Sprintf(" [default: %v]", arg.Default)
+						}
+
+						fmt.Printf("  - %s (%s): %s%s%s\n",
+							arg.Name, typeStr, arg.Description, requiredStr, defaultStr)
+					}
+				}
+
+				fmt.Println()
+			}
+		},
+	}
+	mcpCmd.AddCommand(mcpPromptsCmd)
+
 	// Hidden daemon command for internal use
 	mcpDaemonCmd := &cobra.Command{
 		Use:    "daemon",

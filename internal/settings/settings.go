@@ -531,6 +531,50 @@ func ValidateMCPConfig(cfg *Settings) error {
 		}
 	}
 
+	// Check prompt configurations
+	for promptName, prompt := range cfg.Prompts {
+		// Validate required fields
+		if prompt.Name == "" {
+			return fmt.Errorf("prompt '%s' must have a name", promptName)
+		}
+
+		if prompt.Description == "" {
+			return fmt.Errorf("prompt '%s' must have a description", promptName)
+		}
+
+		// Ensure prompt.Name matches the key
+		if prompt.Name != promptName {
+			return fmt.Errorf("prompt name '%s' doesn't match key '%s'", prompt.Name, promptName)
+		}
+
+		// Check prompt MCP references
+		if prompt.MCP != "" {
+			if _, exists := cfg.MCPServers[prompt.MCP]; !exists {
+				return fmt.Errorf("prompt '%s' references non-existent MCP server '%s'",
+					promptName, prompt.MCP)
+			}
+		}
+
+		// Validate prompt arguments
+		for _, arg := range prompt.Arguments {
+			if arg.Name == "" {
+				return fmt.Errorf("prompt '%s' has an argument without a name", promptName)
+			}
+			if arg.Description == "" {
+				return fmt.Errorf("prompt '%s' argument '%s' must have a description", promptName, arg.Name)
+			}
+			// Validate argument types
+			switch arg.Type {
+			case ArgumentTypeString, ArgumentTypeNumber, ArgumentTypeBool:
+				// Valid types
+			case "":
+				// Default to string if not specified
+			default:
+				return fmt.Errorf("prompt '%s' argument '%s' has invalid type '%s'", promptName, arg.Name, arg.Type)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -587,6 +631,9 @@ func Load() (*Settings, error) {
 		}
 		if c.Commands == nil {
 			c.Commands = make(map[string]CommandConfig)
+		}
+		if c.Prompts == nil {
+			c.Prompts = make(map[string]PromptConfig)
 		}
 		if c.MCPServers == nil {
 			c.MCPServers = make(map[string]MCPServer)
