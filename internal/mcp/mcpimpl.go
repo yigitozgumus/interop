@@ -397,21 +397,24 @@ func (s *MCPLibServer) registerSingleCommandTool(name string, cmdConfig settings
 }
 
 // isGlobalCommand checks if a command is global (not bound to any project)
+// A command is considered project-bound only if it's referenced in a project WITHOUT an alias
+// Commands with aliases remain global, only the alias becomes project-specific
 func (s *MCPLibServer) isGlobalCommand(commandName string) bool {
 	cfg, err := settings.Load()
 	if err != nil {
 		return true // Assume global if we can't load config
 	}
 
-	// Check all projects to see if this command is bound to any
+	// Check all projects to see if this command is bound to any without an alias
 	for _, project := range cfg.Projects {
 		for _, cmd := range project.Commands {
-			if cmd.CommandName == commandName || cmd.Alias == commandName {
-				return false // Command is bound to a project
+			// Only consider it project-bound if the command is referenced directly (no alias)
+			if cmd.CommandName == commandName && cmd.Alias == "" {
+				return false // Command is bound to a project without alias
 			}
 		}
 	}
-	return true // Command not found in any project, so it's global
+	return true // Command not found in any project without alias, so it's global
 }
 
 // executeCommand runs a command and returns its output

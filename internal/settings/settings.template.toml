@@ -25,13 +25,18 @@
 # =====================
 # MCP TOOLS & GLOBAL COMMANDS
 # =====================
-# Global commands (commands not bound to any project) automatically receive
-# an optional "project_path" parameter when exposed as MCP tools.
-# This allows AI assistants to specify a working directory for the command,
-# making global commands work like project-bound commands when needed.
+# Global commands automatically receive an optional "project_path" parameter when exposed as MCP tools.
+# This allows AI assistants to specify a working directory for the command.
 #
-# Example: A global "build" command can be run in any project directory by
-# providing the project_path parameter to the MCP tool.
+# A command is considered global unless it's bound to a project WITHOUT an alias.
+# Commands with aliases remain global - only the alias becomes project-specific.
+#
+# Examples:
+# - Command "build" with alias "b" in a project: "build" stays global, "b" is project-specific
+# - Command "test" without alias in a project: "test" becomes project-specific
+# - Command "deploy" not in any project: "deploy" is global
+#
+# Global commands can be run in any project directory by providing the project_path parameter.
 
 # =====================
 # PROJECT DEFINITIONS
