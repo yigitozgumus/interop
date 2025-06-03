@@ -283,7 +283,6 @@ func (s *MCPLibServer) registerCommandTools(serverName string) {
 
 	s.logInfo("Registered MCP commands tool")
 
-
 }
 
 // registerSingleCommandTool registers a single command as an MCP tool
@@ -430,8 +429,10 @@ func (s *MCPLibServer) executeCommand(name, cmdStr string, args map[string]inter
 
 	// Create a slice for arguments that use prefixes
 	var prefixedArgs []string
+	// Create a slice for positional arguments (no prefix)
+	var positionalArgs []string
 
-	// Process arguments
+	// Process arguments in the order they are defined
 	for _, argDef := range cmdConfig.Arguments {
 		// Get the value (using default if not provided)
 		value, err := cmdConfig.GetArgumentValue(argDef.Name, args)
@@ -474,9 +475,17 @@ func (s *MCPLibServer) executeCommand(name, cmdStr string, args map[string]inter
 				prefixedArgs = append(prefixedArgs, fmt.Sprintf("%s %s", argDef.Prefix, valueStr))
 			}
 		} else {
-			// For non-prefixed arguments, use the traditional placeholder replacement
+			// For non-prefixed arguments, first try placeholder replacement
 			placeholder := "${" + argDef.Name + "}"
-			processedCmd = strings.ReplaceAll(processedCmd, placeholder, valueStr)
+			if strings.Contains(processedCmd, placeholder) {
+				// If the command contains a placeholder, replace it
+				processedCmd = strings.ReplaceAll(processedCmd, placeholder, valueStr)
+				logging.Message("Replaced placeholder %s with value: %s", placeholder, valueStr)
+			} else {
+				// If no placeholder, treat as positional argument
+				positionalArgs = append(positionalArgs, valueStr)
+				logging.Message("Added positional argument: %s", valueStr)
+			}
 		}
 	}
 
@@ -500,7 +509,10 @@ func (s *MCPLibServer) executeCommand(name, cmdStr string, args map[string]inter
 		processedCmd = strings.ReplaceAll(processedCmd, placeholder, valueStr)
 	}
 
-	// Append prefixed arguments to the command
+	// Combine command parts: base command + positional args + prefixed args
+	if len(positionalArgs) > 0 {
+		processedCmd = fmt.Sprintf("%s %s", processedCmd, strings.Join(positionalArgs, " "))
+	}
 	if len(prefixedArgs) > 0 {
 		processedCmd = fmt.Sprintf("%s %s", processedCmd, strings.Join(prefixedArgs, " "))
 	}
