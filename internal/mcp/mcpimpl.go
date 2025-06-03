@@ -818,7 +818,7 @@ func (s *MCPLibServer) Start() error {
 	}
 
 	// In SSE mode, start the HTTP server
-	if err := s.httpServer.Start(fmt.Sprintf(":%d", s.port)); err != nil {
+	if err := s.httpServer.Start(fmt.Sprintf("127.0.0.1:%d", s.port)); err != nil {
 		err = fmt.Errorf("failed to start HTTP server: %w", err)
 		logging.Error("%v", err)
 		return err

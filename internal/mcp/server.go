@@ -619,14 +619,14 @@ func (m *ServerManager) ExportMCPConfig() (string, error) {
 
 	// Add default server
 	servers["default-interopMCPServer"] = map[string]string{
-		"url": fmt.Sprintf("http://localhost:%d/sse", cfg.MCPPort),
+		"url": fmt.Sprintf("http://localhost:%d/mcp", cfg.MCPPort),
 	}
 
 	// Add all configured MCP servers
 	for name, mcpServer := range cfg.MCPServers {
 		serverKey := fmt.Sprintf("%s-interopMCPServer", name)
 		servers[serverKey] = map[string]string{
-			"url": fmt.Sprintf("http://localhost:%d/sse", mcpServer.Port),
+			"url": fmt.Sprintf("http://localhost:%d/mcp", mcpServer.Port),
 		}
 	}
 

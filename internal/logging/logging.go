@@ -91,24 +91,24 @@ func (l *Logger) ErrorAndExit(format string, args ...interface{}) {
 	os.Exit(1)
 }
 
-// Warning prints a yellow "Warning: …" message to stdout if log level permits
+// Warning prints a yellow "Warning: …" message to stderr if log level permits
 func (l *Logger) Warning(format string, args ...interface{}) {
 	if l.level >= LevelWarning {
 		if l.useColors {
-			fmt.Printf(colorYellow+"Warning: "+colorReset+format+"\n", args...)
+			fmt.Fprintf(os.Stderr, colorYellow+"Warning: "+colorReset+format+"\n", args...)
 		} else {
-			fmt.Printf("Warning: "+format+"\n", args...)
+			fmt.Fprintf(os.Stderr, "Warning: "+format+"\n", args...)
 		}
 	}
 }
 
-// Message prints a green "Message: …" message to stdout if log level permits
+// Message prints a green "Message: …" message to stderr if log level permits
 func (l *Logger) Message(format string, args ...interface{}) {
 	if l.level >= LevelVerbose {
 		if l.useColors {
-			fmt.Printf(colorGreen+"Message: "+colorReset+format+"\n", args...)
+			fmt.Fprintf(os.Stderr, colorGreen+"Message: "+colorReset+format+"\n", args...)
 		} else {
-			fmt.Printf("Message: "+format+"\n", args...)
+			fmt.Fprintf(os.Stderr, "Message: "+format+"\n", args...)
 		}
 	}
 }
@@ -145,12 +145,12 @@ func ErrorAndExit(format string, args ...interface{}) {
 	DefaultLogger.ErrorAndExit(format, args...)
 }
 
-// Warning prints a warning message to stdout if log level permits
+// Warning prints a warning message to stderr if log level permits
 func Warning(format string, args ...interface{}) {
 	DefaultLogger.Warning(format, args...)
 }
 
-// Message prints an informational message to stdout if log level permits
+// Message prints an informational message to stderr if log level permits
 func Message(format string, args ...interface{}) {
 	DefaultLogger.Message(format, args...)
 }

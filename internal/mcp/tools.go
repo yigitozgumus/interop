@@ -160,7 +160,7 @@ func (c *ToolsClient) SubscribeToEvents(handler SSEHandler) error {
 	var lastRetry time.Time
 
 	// Define possible SSE endpoints to try in order
-	sseEndpoints := []string{"/events", "/sse", "/mcp"}
+	sseEndpoints := []string{"/events", "/mcp", "/sse"}
 
 	for {
 		// Check if we've exceeded max retries
