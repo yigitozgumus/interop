@@ -13,6 +13,24 @@ import (
 
 // StartServer starts the MCP server daemon with support for multiple servers
 func StartServer(serverName string, all bool) error {
+	// Check if we're in stdio mode
+	serverMode := os.Getenv("MCP_SERVER_MODE")
+	if serverMode == "stdio" {
+		// In stdio mode, we don't support --all flag
+		if all {
+			return fmt.Errorf("--all flag is not supported in stdio mode")
+		}
+
+		// Create and start the server directly
+		mcpLibServer, err := NewMCPLibServer()
+		if err != nil {
+			return fmt.Errorf("failed to create MCP server: %w", err)
+		}
+
+		return mcpLibServer.Start()
+	}
+
+	// For SSE mode, use the server manager
 	manager, err := NewServerManager()
 	if err != nil {
 		logging.Error("failed to initialize MCP server manager: %v", err)
@@ -37,6 +55,24 @@ func StartServer(serverName string, all bool) error {
 
 // StopServer stops the MCP server daemon with support for multiple servers
 func StopServer(serverName string, all bool) error {
+	// Check if we're in stdio mode
+	serverMode := os.Getenv("MCP_SERVER_MODE")
+	if serverMode == "stdio" {
+		// In stdio mode, we don't support --all flag
+		if all {
+			return fmt.Errorf("--all flag is not supported in stdio mode")
+		}
+
+		// Create and stop the server directly
+		mcpLibServer, err := NewMCPLibServer()
+		if err != nil {
+			return fmt.Errorf("failed to create MCP server: %w", err)
+		}
+
+		return mcpLibServer.Stop()
+	}
+
+	// For SSE mode, use the server manager
 	manager, err := NewServerManager()
 	if err != nil {
 		logging.Error("failed to initialize MCP server manager: %v", err)
@@ -61,6 +97,30 @@ func StopServer(serverName string, all bool) error {
 
 // RestartServer restarts the MCP server daemon with support for multiple servers
 func RestartServer(serverName string, all bool) error {
+	// Check if we're in stdio mode
+	serverMode := os.Getenv("MCP_SERVER_MODE")
+	if serverMode == "stdio" {
+		// In stdio mode, we don't support --all flag
+		if all {
+			return fmt.Errorf("--all flag is not supported in stdio mode")
+		}
+
+		// Create and restart the server directly
+		mcpLibServer, err := NewMCPLibServer()
+		if err != nil {
+			return fmt.Errorf("failed to create MCP server: %w", err)
+		}
+
+		// Stop the server first
+		if err := mcpLibServer.Stop(); err != nil {
+			return fmt.Errorf("failed to stop MCP server: %w", err)
+		}
+
+		// Start the server again
+		return mcpLibServer.Start()
+	}
+
+	// For SSE mode, use the server manager
 	manager, err := NewServerManager()
 	if err != nil {
 		logging.Error("failed to initialize MCP server manager: %v", err)

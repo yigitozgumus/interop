@@ -133,7 +133,10 @@ func main() {
 	}
 
 	// Define flags for MCP commands
-	var allServers bool
+	var startAllServers bool
+	var stopAllServers bool
+	var restartAllServers bool
+	var statusAllServers bool
 	var serverName string
 	var serverMode string
 
@@ -143,15 +146,17 @@ func main() {
 		Short: "Start an MCP server or all servers",
 		Long:  "Start all MCP servers by default, or a specific named server if provided",
 		Run: func(cmd *cobra.Command, args []string) {
+			// Check for stdio mode first
+			if serverMode == "stdio" && startAllServers {
+				logging.ErrorAndExit("--all flag is not supported in stdio mode")
+			}
+
 			// If server name is provided as an argument, override the flag
 			if len(args) > 0 {
 				serverName = args[0]
-				allServers = false // Single server specified, turn off all flag
+				startAllServers = false // Single server specified, turn off all flag
 			} else if serverName != "" {
-				allServers = false // Single server specified, turn off all flag
-			} else if !allServers {
-				// No server name provided and all flag not set, default to all servers
-				allServers = true
+				startAllServers = false // Single server specified, turn off all flag
 			}
 
 			// Set server mode in environment
@@ -159,12 +164,17 @@ func main() {
 				os.Setenv("MCP_SERVER_MODE", serverMode)
 			}
 
-			if err := mcp.StartServer(serverName, allServers); err != nil {
+			// For SSE mode, default to all servers if no specific server is specified
+			if serverMode != "stdio" && !startAllServers && serverName == "" {
+				startAllServers = true
+			}
+
+			if err := mcp.StartServer(serverName, startAllServers); err != nil {
 				logging.ErrorAndExit("Failed to start MCP server: %v", err)
 			}
 		},
 	}
-	mcpStartCmd.Flags().BoolVarP(&allServers, "all", "a", true, "Start all MCP servers (default)")
+	mcpStartCmd.Flags().BoolVarP(&startAllServers, "all", "a", false, "Start all MCP servers (default, not supported in stdio mode)")
 	mcpStartCmd.Flags().StringVarP(&serverName, "server", "s", "", "Specific MCP server to start")
 	mcpStartCmd.Flags().StringVar(&serverMode, "mode", "sse", "Server mode (stdio or sse)")
 	mcpCmd.AddCommand(mcpStartCmd)
@@ -180,13 +190,24 @@ func main() {
 				serverName = args[0]
 			}
 
-			if err := mcp.StopServer(serverName, allServers); err != nil {
+			// Set server mode in environment
+			if serverMode != "" {
+				os.Setenv("MCP_SERVER_MODE", serverMode)
+			}
+
+			// In stdio mode, --all flag is not supported
+			if serverMode == "stdio" && stopAllServers {
+				logging.ErrorAndExit("--all flag is not supported in stdio mode")
+			}
+
+			if err := mcp.StopServer(serverName, stopAllServers); err != nil {
 				logging.ErrorAndExit("Failed to stop MCP server: %v", err)
 			}
 		},
 	}
-	mcpStopCmd.Flags().BoolVarP(&allServers, "all", "a", false, "Stop all MCP servers")
+	mcpStopCmd.Flags().BoolVarP(&stopAllServers, "all", "a", false, "Stop all MCP servers (not supported in stdio mode)")
 	mcpStopCmd.Flags().StringVarP(&serverName, "server", "s", "", "Specific MCP server to stop")
+	mcpStopCmd.Flags().StringVar(&serverMode, "mode", "sse", "Server mode (stdio or sse)")
 	mcpCmd.AddCommand(mcpStopCmd)
 
 	// MCP restart command
@@ -200,13 +221,24 @@ func main() {
 				serverName = args[0]
 			}
 
-			if err := mcp.RestartServer(serverName, allServers); err != nil {
+			// Set server mode in environment
+			if serverMode != "" {
+				os.Setenv("MCP_SERVER_MODE", serverMode)
+			}
+
+			// In stdio mode, --all flag is not supported
+			if serverMode == "stdio" && restartAllServers {
+				logging.ErrorAndExit("--all flag is not supported in stdio mode")
+			}
+
+			if err := mcp.RestartServer(serverName, restartAllServers); err != nil {
 				logging.ErrorAndExit("Failed to restart MCP server: %v", err)
 			}
 		},
 	}
-	mcpRestartCmd.Flags().BoolVarP(&allServers, "all", "a", false, "Restart all MCP servers")
+	mcpRestartCmd.Flags().BoolVarP(&restartAllServers, "all", "a", false, "Restart all MCP servers (not supported in stdio mode)")
 	mcpRestartCmd.Flags().StringVarP(&serverName, "server", "s", "", "Specific MCP server to restart")
+	mcpRestartCmd.Flags().StringVar(&serverMode, "mode", "sse", "Server mode (stdio or sse)")
 	mcpCmd.AddCommand(mcpRestartCmd)
 
 	// MCP status command
@@ -220,14 +252,14 @@ func main() {
 				serverName = args[0]
 			}
 
-			status, err := mcp.GetStatus(serverName, allServers)
+			status, err := mcp.GetStatus(serverName, statusAllServers)
 			if err != nil {
 				logging.ErrorAndExit("Failed to get MCP server status: %v", err)
 			}
 			fmt.Println(status)
 		},
 	}
-	mcpStatusCmd.Flags().BoolVarP(&allServers, "all", "a", true, "Get status of all MCP servers (default)")
+	mcpStatusCmd.Flags().BoolVarP(&statusAllServers, "all", "a", true, "Get status of all MCP servers (default)")
 	mcpStatusCmd.Flags().StringVarP(&serverName, "server", "s", "", "Specific MCP server to get status for")
 	mcpCmd.AddCommand(mcpStatusCmd)
 

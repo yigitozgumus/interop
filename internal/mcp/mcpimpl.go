@@ -813,14 +813,8 @@ func (s *MCPLibServer) Start() error {
 	logging.DisableColors()
 
 	if s.serverMode == "stdio" {
-		// In stdio mode, we don't need to start an HTTP server
-		// The server will communicate through stdin/stdout
-		if err := server.ServeStdio(s.mcpServer); err != nil {
-			err = fmt.Errorf("failed to start stdio server: %w", err)
-			logging.Error("%v", err)
-			return err
-		}
-		return nil
+		// In stdio mode, just start the server directly
+		return server.ServeStdio(s.mcpServer)
 	}
 
 	// In SSE mode, start the HTTP server
