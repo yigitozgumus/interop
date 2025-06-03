@@ -218,30 +218,51 @@ func (c *Command) RunWithArgs(args []string) error {
 		if exists && len(cmdConfig.Arguments) > 0 && len(args) > 0 {
 			// Parse args into a map
 			argsMap := make(map[string]string)
+			positionalIndex := 0
 
-			// Handle args as name=value pairs
+			// First, collect arguments that don't have prefixes (positional arguments)
+			var positionalArgDefs []settings.CommandArgument
+			for _, argDef := range cmdConfig.Arguments {
+				if argDef.Prefix == "" {
+					positionalArgDefs = append(positionalArgDefs, argDef)
+				}
+			}
+
+			// Process arguments in order
 			for _, arg := range args {
 				if strings.Contains(arg, "=") {
+					// Handle name=value pairs
 					parts := strings.SplitN(arg, "=", 2)
 					if len(parts) == 2 {
 						argsMap[parts[0]] = parts[1]
 					}
+				} else {
+					// Handle positional arguments (no = sign)
+					if positionalIndex < len(positionalArgDefs) {
+						argDef := positionalArgDefs[positionalIndex]
+						argsMap[argDef.Name] = arg
+						positionalIndex++
+						logging.Message("Mapped positional argument '%s' to parameter '%s'", arg, argDef.Name)
+					} else {
+						// If we have more positional args than expected, treat as regular args
+						logging.Message("Extra positional argument: %s", arg)
+					}
 				}
 			}
 
-			// If we have prefixed arguments defined and args were provided as name=value pairs
+			// If we have any arguments to process
 			if len(argsMap) > 0 {
 				// For shell commands, we'll construct a new command string with prefixes
 				if c.Type == ShellCommand && len(cmd.Args) >= 2 {
 					baseCmd := cmd.Args[1]
 					var prefixedArgs []string
+					var positionalArgs []string
 
-					// Process each argument definition
+					// Process each argument definition in order
 					for _, argDef := range cmdConfig.Arguments {
-						// If this argument has a prefix and was provided
-						if argDef.Prefix != "" {
-							if value, ok := argsMap[argDef.Name]; ok {
-								// For boolean arguments, only add the flag if true
+						if value, ok := argsMap[argDef.Name]; ok {
+							if argDef.Prefix != "" {
+								// For arguments with prefixes
 								if argDef.Type == settings.ArgumentTypeBool {
 									if value == "true" {
 										prefixedArgs = append(prefixedArgs, argDef.Prefix)
@@ -250,20 +271,26 @@ func (c *Command) RunWithArgs(args []string) error {
 									// For other types, add both prefix and value
 									prefixedArgs = append(prefixedArgs, fmt.Sprintf("%s %s", argDef.Prefix, value))
 								}
-								// Remove from argsMap to track which ones we've processed
-								delete(argsMap, argDef.Name)
+							} else {
+								// For arguments without prefixes (positional)
+								positionalArgs = append(positionalArgs, value)
 							}
+							// Remove from argsMap to track which ones we've processed
+							delete(argsMap, argDef.Name)
 						}
 					}
 
-					// Append any remaining arguments (without prefixes)
+					// Append any remaining arguments (undefined arguments)
 					var standardArgs []string
 					for name, value := range argsMap {
 						standardArgs = append(standardArgs, fmt.Sprintf("%s=%s", name, value))
 					}
 
-					// Combine the command parts
+					// Combine the command parts: base command + positional args + prefixed args + remaining args
 					newCmd := baseCmd
+					if len(positionalArgs) > 0 {
+						newCmd = fmt.Sprintf("%s %s", newCmd, strings.Join(positionalArgs, " "))
+					}
 					if len(prefixedArgs) > 0 {
 						newCmd = fmt.Sprintf("%s %s", newCmd, strings.Join(prefixedArgs, " "))
 					}
