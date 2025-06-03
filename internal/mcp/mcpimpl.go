@@ -325,6 +325,16 @@ func (s *MCPLibServer) registerSingleCommandTool(name string, cmdConfig settings
 
 	// Add the tool handler
 	s.mcpServer.AddTool(tool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		// For global commands, extract project_path separately (don't add to args)
+		var providedProjectPath string
+		if isGlobalCommand {
+			if pathValue, ok := request.Params.Arguments["project_path"]; ok {
+				if pathStr, ok := pathValue.(string); ok && pathStr != "" {
+					providedProjectPath = pathStr
+				}
+			}
+		}
+
 		// Handle arguments according to how they were defined
 		var args map[string]interface{}
 		if len(cmdConfig.Arguments) > 0 {
@@ -363,28 +373,22 @@ func (s *MCPLibServer) registerSingleCommandTool(name string, cmdConfig settings
 			}
 		} else {
 			// For legacy commands, use the 'args' object if provided
+			// But exclude project_path from it
 			if rawArgs, ok := request.Params.Arguments["args"]; ok {
 				if argsMap, ok := rawArgs.(map[string]interface{}); ok {
-					args = argsMap
-				}
-			}
-		}
-
-		// For global commands, check if project_path is provided
-		if isGlobalCommand {
-			if pathValue, ok := request.Params.Arguments["project_path"]; ok {
-				if pathStr, ok := pathValue.(string); ok && pathStr != "" {
-					// Add project_path to args so executeCommand can access it
-					if args == nil {
-						args = make(map[string]interface{})
+					args = make(map[string]interface{})
+					for key, value := range argsMap {
+						// Don't include project_path in args - it's handled separately
+						if key != "project_path" {
+							args[key] = value
+						}
 					}
-					args["project_path"] = pathStr
 				}
 			}
 		}
 
-		// Execute the command - use the actual command name from settings
-		result, err := s.executeCommand(name, cmdConfig.Cmd, args)
+		// Execute the command - pass project_path separately
+		result, err := s.executeCommandWithPath(name, cmdConfig.Cmd, args, providedProjectPath)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("Command execution failed: %v", err)), nil
 		}
@@ -417,8 +421,8 @@ func (s *MCPLibServer) isGlobalCommand(commandName string) bool {
 	return true // Command not found in any project without alias, so it's global
 }
 
-// executeCommand runs a command and returns its output
-func (s *MCPLibServer) executeCommand(name, cmdStr string, args map[string]interface{}) (string, error) {
+// executeCommandWithPath runs a command and returns its output, with project_path handled separately
+func (s *MCPLibServer) executeCommandWithPath(name, cmdStr string, args map[string]interface{}, projectPath string) (string, error) {
 	// Check if the command is an alias, and if so use the original command name
 	originalName := name
 	if aliasTarget, isAlias := s.commandAliases[name]; isAlias {
@@ -448,30 +452,23 @@ func (s *MCPLibServer) executeCommand(name, cmdStr string, args map[string]inter
 	processedCmd := cmdStr
 
 	// Check if command has a project context
-	var projectPath string
+	var projectPathUsed string
 
-	// For global commands, check if project_path was provided as an argument
-	if projectPathArg, ok := args["project_path"]; ok {
-		if pathStr, ok := projectPathArg.(string); ok && pathStr != "" {
-			// Expand tilde if needed
-			if strings.HasPrefix(pathStr, "~/") {
-				if homeDir, err := os.UserHomeDir(); err == nil {
-					projectPath = filepath.Join(homeDir, pathStr[2:])
-				} else {
-					projectPath = pathStr
-				}
+	// If project_path is provided, use it
+	if projectPath != "" {
+		// Expand tilde if needed
+		if strings.HasPrefix(projectPath, "~/") {
+			if homeDir, err := os.UserHomeDir(); err == nil {
+				projectPathUsed = filepath.Join(homeDir, projectPath[2:])
 			} else {
-				projectPath = pathStr
+				projectPathUsed = projectPath
 			}
-			s.logInfo("Using provided project path for global command %s: %s", originalName, projectPath)
-
-			// Remove project_path from args since it's not a command argument
-			delete(args, "project_path")
+		} else {
+			projectPathUsed = projectPath
 		}
-	}
-
-	// If no project path provided in args, try to find the associated project
-	if projectPath == "" {
+		s.logInfo("Using provided project path for command %s: %s", originalName, projectPathUsed)
+	} else {
+		// If no project_path is provided, try to find the associated project
 		cfg, err := settings.Load()
 		if err == nil {
 			// Look through all projects to find if this command is associated with one
@@ -479,12 +476,12 @@ func (s *MCPLibServer) executeCommand(name, cmdStr string, args map[string]inter
 				for _, cmd := range project.Commands {
 					if cmd.CommandName == originalName || cmd.Alias == originalName {
 						// Found the project this command belongs to
-						projectPath = project.Path
-						s.logInfo("Found project binding for command %s: %s", originalName, projectPath)
+						projectPathUsed = project.Path
+						s.logInfo("Found project binding for command %s: %s", originalName, projectPathUsed)
 						break
 					}
 				}
-				if projectPath != "" {
+				if projectPathUsed != "" {
 					break
 				}
 			}
@@ -599,10 +596,10 @@ func (s *MCPLibServer) executeCommand(name, cmdStr string, args map[string]inter
 
 	// Prepare the command based on project context
 	var executeCmd string
-	if projectPath != "" {
+	if projectPathUsed != "" {
 		// If project path is provided, add directory change before and after
-		executeCmd = fmt.Sprintf("cd %s && %s && cd -", projectPath, processedCmd)
-		s.logInfo("Running command in project directory: %s", projectPath)
+		executeCmd = fmt.Sprintf("cd %s && %s && cd -", projectPathUsed, processedCmd)
+		s.logInfo("Running command in project directory: %s", projectPathUsed)
 	} else {
 		executeCmd = processedCmd
 	}
