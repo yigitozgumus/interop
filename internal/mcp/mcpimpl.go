@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"interop/internal/logging"
 	"interop/internal/settings"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,8 +21,7 @@ import (
 // MCPLibServer represents the MCP server implementation using mark3labs/mcp-go
 type MCPLibServer struct {
 	mcpServer      *server.MCPServer
-	sseServer      *server.SSEServer
-	httpServer     *http.Server
+	httpServer     *server.StreamableHTTPServer
 	port           int
 	configDir      string
 	logFile        *os.File
@@ -146,12 +144,9 @@ func NewMCPLibServer() (*MCPLibServer, error) {
 		server.WithLogging(),
 	)
 
-	// Create SSE server with the MCP server
-	sseServer := server.NewSSEServer(mcpServer, server.WithBaseURL(fmt.Sprintf("http://localhost:%d", port)))
-
 	s := &MCPLibServer{
 		mcpServer:      mcpServer,
-		sseServer:      sseServer,
+		httpServer:     nil,
 		port:           port,
 		configDir:      configDir,
 		logFile:        logFile,
@@ -166,6 +161,14 @@ func NewMCPLibServer() (*MCPLibServer, error) {
 
 	// Register prompts based on configuration for this server
 	s.registerPrompts(serverName)
+
+	// Create the appropriate server based on mode
+	if serverMode == "stdio" {
+		// No need to create HTTP server for stdio mode
+	} else {
+		// Create HTTP server for SSE mode
+		s.httpServer = server.NewStreamableHTTPServer(mcpServer)
+	}
 
 	// Write initial log message to file only, not stdout
 	if serverName != "" {
@@ -483,10 +486,16 @@ func (s *MCPLibServer) registerSingleCommandTool(name string, cmdConfig settings
 
 	// Add the tool handler
 	s.mcpServer.AddTool(tool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		// Convert request parameters to map
+		args, ok := request.Params.Arguments.(map[string]interface{})
+		if !ok {
+			return mcp.NewToolResultError("Invalid arguments format"), nil
+		}
+
 		// For global commands, extract project_path separately (don't add to args)
 		var providedProjectPath string
 		if isGlobalCommand {
-			if pathValue, ok := request.Params.Arguments["project_path"]; ok {
+			if pathValue, ok := args["project_path"]; ok {
 				if pathStr, ok := pathValue.(string); ok && pathStr != "" {
 					providedProjectPath = pathStr
 				}
@@ -494,12 +503,12 @@ func (s *MCPLibServer) registerSingleCommandTool(name string, cmdConfig settings
 		}
 
 		// Handle arguments according to how they were defined
-		var args map[string]interface{}
+		var processedArgs map[string]interface{}
 		if len(cmdConfig.Arguments) > 0 {
 			// For commands with defined arguments, extract each from the request
-			args = make(map[string]interface{})
+			processedArgs = make(map[string]interface{})
 			for _, arg := range cmdConfig.Arguments {
-				if value, ok := request.Params.Arguments[arg.Name]; ok {
+				if value, ok := args[arg.Name]; ok {
 					// Convert values based on the expected type
 					switch arg.Type {
 					case settings.ArgumentTypeNumber:
@@ -507,46 +516,46 @@ func (s *MCPLibServer) registerSingleCommandTool(name string, cmdConfig settings
 						switch v := value.(type) {
 						case string:
 							if numVal, err := strconv.ParseFloat(v, 64); err == nil {
-								args[arg.Name] = numVal
+								processedArgs[arg.Name] = numVal
 							} else {
-								args[arg.Name] = value
+								processedArgs[arg.Name] = value
 							}
 						case float64:
-							args[arg.Name] = v
+							processedArgs[arg.Name] = v
 						case int:
-							args[arg.Name] = float64(v)
+							processedArgs[arg.Name] = float64(v)
 						default:
-							args[arg.Name] = value
+							processedArgs[arg.Name] = value
 						}
 					case settings.ArgumentTypeBool:
 						// Convert to bool if needed
 						switch v := value.(type) {
 						case string:
 							if boolVal, err := strconv.ParseBool(v); err == nil {
-								args[arg.Name] = boolVal
+								processedArgs[arg.Name] = boolVal
 							} else {
-								args[arg.Name] = value
+								processedArgs[arg.Name] = value
 							}
 						case bool:
-							args[arg.Name] = v
+							processedArgs[arg.Name] = v
 						default:
-							args[arg.Name] = value
+							processedArgs[arg.Name] = value
 						}
 					default:
-						args[arg.Name] = value
+						processedArgs[arg.Name] = value
 					}
 				}
 			}
 		} else {
 			// For legacy commands, use the 'args' object if provided
 			// But exclude project_path from it
-			if rawArgs, ok := request.Params.Arguments["args"]; ok {
+			if rawArgs, ok := args["args"]; ok {
 				if argsMap, ok := rawArgs.(map[string]interface{}); ok {
-					args = make(map[string]interface{})
+					processedArgs = make(map[string]interface{})
 					for key, value := range argsMap {
 						// Don't include project_path in args - it's handled separately
 						if key != "project_path" {
-							args[key] = value
+							processedArgs[key] = value
 						}
 					}
 				}
@@ -554,7 +563,7 @@ func (s *MCPLibServer) registerSingleCommandTool(name string, cmdConfig settings
 		}
 
 		// Execute the command - pass project_path separately
-		result, err := s.executeCommandWithPath(name, cmdConfig.Cmd, args, providedProjectPath)
+		result, err := s.executeCommandWithPath(name, cmdConfig.Cmd, processedArgs, providedProjectPath)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("Command execution failed: %v", err)), nil
 		}
@@ -806,12 +815,17 @@ func (s *MCPLibServer) Start() error {
 	if s.serverMode == "stdio" {
 		// In stdio mode, we don't need to start an HTTP server
 		// The server will communicate through stdin/stdout
+		if err := server.ServeStdio(s.mcpServer); err != nil {
+			err = fmt.Errorf("failed to start stdio server: %w", err)
+			logging.Error("%v", err)
+			return err
+		}
 		return nil
 	}
 
 	// In SSE mode, start the HTTP server
-	if err := s.sseServer.Start(fmt.Sprintf(":%d", s.port)); err != nil {
-		err = fmt.Errorf("failed to start SSE server: %w", err)
+	if err := s.httpServer.Start(fmt.Sprintf(":%d", s.port)); err != nil {
+		err = fmt.Errorf("failed to start HTTP server: %w", err)
 		logging.Error("%v", err)
 		return err
 	}
@@ -831,12 +845,12 @@ func (s *MCPLibServer) Stop() error {
 		s.logFile.Close()
 	}
 
-	if s.serverMode == "sse" {
+	if s.serverMode == "sse" && s.httpServer != nil {
 		// Gracefully shutdown the HTTP server
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		if err := s.sseServer.Shutdown(ctx); err != nil {
+		if err := s.httpServer.Shutdown(ctx); err != nil {
 			err = fmt.Errorf("failed to shutdown HTTP server: %w", err)
 			logging.Error("%v", err)
 			return err
