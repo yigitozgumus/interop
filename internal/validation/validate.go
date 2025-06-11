@@ -12,7 +12,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
+
+	"github.com/BurntSushi/toml"
 )
 
 // CommandType represents the type of a command
@@ -108,6 +111,11 @@ func ValidateCommands(cfg *settings.Settings) []ValidationError {
 				usedAliases[aliasConfig.Alias] = projectName
 			}
 		}
+	}
+
+	// Validate command directory conflicts
+	if len(cfg.CommandDirs) > 0 {
+		errors = append(errors, validateCommandDirectoryConflicts(cfg)...)
 	}
 
 	// Validate MCP server configurations
@@ -221,6 +229,117 @@ func ValidateCommands(cfg *settings.Settings) []ValidationError {
 		}
 	}
 
+	return errors
+}
+
+// validateCommandDirectoryConflicts checks for command name conflicts between
+// main settings.toml and command directories, and between command directories
+func validateCommandDirectoryConflicts(cfg *settings.Settings) []ValidationError {
+	var errors []ValidationError
+	
+	// Track commands from main settings
+	mainCommands := make(map[string]bool)
+	for name := range cfg.Commands {
+		mainCommands[name] = true
+	}
+	
+	// Track commands from each directory to detect conflicts
+	dirCommands := make(map[string]map[string]string) // dir -> command name -> file
+	
+	for _, dir := range cfg.CommandDirs {
+		// Expand tilde and relative paths
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			errors = append(errors, ValidationError{
+				Message: fmt.Sprintf("Failed to get home directory for command directory validation: %v", err),
+				Severe:  false,
+			})
+			continue
+		}
+		
+		dirPath := dir
+		if strings.HasPrefix(dirPath, "~/") {
+			dirPath = filepath.Join(homeDir, dirPath[2:])
+		} else if !filepath.IsAbs(dirPath) {
+			dirPath = filepath.Join(homeDir, dirPath)
+		}
+		
+		// Check if directory exists
+		if _, err := os.Stat(dirPath); os.IsNotExist(err) {
+			errors = append(errors, ValidationError{
+				Message: fmt.Sprintf("Command directory does not exist: %s", dir),
+				Severe:  false,
+			})
+			continue
+		}
+		
+		// Find TOML files in the directory
+		files, err := filepath.Glob(filepath.Join(dirPath, "*.toml"))
+		if err != nil {
+			errors = append(errors, ValidationError{
+				Message: fmt.Sprintf("Failed to list TOML files in %s: %v", dir, err),
+				Severe:  false,
+			})
+			continue
+		}
+		
+		// Sort files for consistent processing order
+		sort.Strings(files)
+		
+		// Parse each file to find commands
+		dirCommands[dir] = make(map[string]string)
+		for _, file := range files {
+			var fileCommands struct {
+				Commands map[string]settings.CommandConfig `toml:"commands"`
+			}
+			
+			if _, err := toml.DecodeFile(file, &fileCommands); err != nil {
+				errors = append(errors, ValidationError{
+					Message: fmt.Sprintf("Failed to parse command file %s: %v", file, err),
+					Severe:  false,
+				})
+				continue
+			}
+			
+			// Check for conflicts with main settings
+			for cmdName := range fileCommands.Commands {
+				if mainCommands[cmdName] {
+					errors = append(errors, ValidationError{
+						Message: fmt.Sprintf("Command '%s' in %s conflicts with main settings.toml", cmdName, file),
+						Severe:  false, // Warning level since main settings takes precedence
+					})
+				}
+				
+				// Check for conflicts within the same directory
+				if existingFile, exists := dirCommands[dir][cmdName]; exists {
+					errors = append(errors, ValidationError{
+						Message: fmt.Sprintf("Command '%s' defined in both %s and %s", cmdName, existingFile, file),
+						Severe:  false, // Warning level since alphabetical order determines precedence
+					})
+				} else {
+					dirCommands[dir][cmdName] = file
+				}
+			}
+		}
+	}
+	
+	// Check for conflicts between different directories
+	allDirCommands := make(map[string]string) // command name -> first directory that defined it
+	for _, dir := range cfg.CommandDirs {
+		if cmds, exists := dirCommands[dir]; exists {
+			for cmdName := range cmds {
+				if firstDir, conflict := allDirCommands[cmdName]; conflict {
+					errors = append(errors, ValidationError{
+						Message: fmt.Sprintf("Command '%s' defined in both '%s' and '%s' directories", cmdName, firstDir, dir),
+						Severe:  false, // Warning level since directory order determines precedence
+					})
+				} else {
+					allDirCommands[cmdName] = dir
+				}
+			}
+		}
+	}
+	
 	return errors
 }
 

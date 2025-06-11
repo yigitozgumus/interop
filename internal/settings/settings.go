@@ -7,6 +7,7 @@ import (
 	"interop/internal/logging"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -53,6 +54,12 @@ type CommandArgument struct {
 	Prefix      string       `toml:"prefix,omitempty"`      // Prefix to use for the argument (e.g. "--keys")
 }
 
+// CommandExample represents an example of how to use a command
+type CommandExample struct {
+	Description string `toml:"description"` // Description of what this example does
+	Command     string `toml:"command"`     // Example command invocation
+}
+
 // CommandConfig represents a command that can be executed
 type CommandConfig struct {
 	Description  string            `toml:"description,omitempty"`
@@ -61,6 +68,8 @@ type CommandConfig struct {
 	IsExecutable bool              `toml:"is_executable"`
 	Arguments    []CommandArgument `toml:"arguments,omitempty"` // Argument definitions for the command
 	MCP          string            `toml:"mcp,omitempty"`       // Optional MCP server name this command belongs to
+	Version      string            `toml:"version,omitempty"`   // Version of the command
+	Examples     []CommandExample  `toml:"examples,omitempty"`  // Usage examples for the command
 }
 
 // NewCommandConfig creates a new CommandConfig with default values
@@ -70,6 +79,8 @@ func NewCommandConfig() CommandConfig {
 		IsExecutable: false,
 		Arguments:    []CommandArgument{},
 		MCP:          "",
+		Version:      "",
+		Examples:     []CommandExample{},
 	}
 }
 
@@ -82,6 +93,8 @@ func (c *CommandConfig) UnmarshalTOML(data interface{}) error {
 	c.Description = ""
 	c.Arguments = []CommandArgument{}
 	c.MCP = ""
+	c.Version = ""
+	c.Examples = []CommandExample{}
 
 	// Handle different input cases
 	switch v := data.(type) {
@@ -100,6 +113,9 @@ func (c *CommandConfig) UnmarshalTOML(data interface{}) error {
 		c.IsExecutable = getBoolWithDefault(v, "is_executable", false)
 		if mcp, ok := v["mcp"].(string); ok {
 			c.MCP = mcp
+		}
+		if version, ok := v["version"].(string); ok {
+			c.Version = version
 		}
 
 		// Parse arguments if present
@@ -140,6 +156,27 @@ func (c *CommandConfig) UnmarshalTOML(data interface{}) error {
 					}
 
 					c.Arguments = append(c.Arguments, argument)
+				}
+			}
+		}
+
+		// Parse examples if present
+		if examples, ok := v["examples"].([]interface{}); ok {
+			for _, ex := range examples {
+				if exMap, ok := ex.(map[string]interface{}); ok {
+					example := CommandExample{}
+					
+					if desc, ok := exMap["description"].(string); ok {
+						example.Description = desc
+					}
+					if cmd, ok := exMap["command"].(string); ok {
+						example.Command = cmd
+					}
+					
+					// Only add if both fields are present
+					if example.Description != "" && example.Command != "" {
+						c.Examples = append(c.Examples, example)
+					}
 				}
 			}
 		}
@@ -238,6 +275,7 @@ type Settings struct {
 	Commands              map[string]CommandConfig `toml:"commands"`
 	Prompts               map[string]PromptConfig  `toml:"prompts"` // Add prompts configuration
 	ExecutableSearchPaths []string                 `toml:"executable_search_paths"`
+	CommandDirs           []string                 `toml:"command_dirs"`          // Directories to load additional command files from
 	MCPPort               int                      `toml:"mcp_port"`
 	MCPServers            map[string]MCPServer     `toml:"mcp_servers"`
 }
@@ -289,6 +327,10 @@ var defaultSettingsTemplate = `# Interop Settings Template
 # executable_search_paths = [   # Additional directories to search for executables
 #   "~/.local/bin",
 #   "~/bin"
+# ]
+# command_dirs = [              # Directories to load additional command definitions from
+#   "~/.config/interop/commands.d",
+#   "~/projects/shared/interop-commands"
 # ]
 # mcp_port = 8081               # Default port for the main MCP server
 
@@ -402,16 +444,30 @@ var defaultSettingsTemplate = `# Interop Settings Template
 # =====================
 # COMMAND DEFINITIONS
 # =====================
+# Commands can be defined in the main settings.toml file or in separate files
+# in directories specified by command_dirs. Commands from main settings.toml
+# take precedence over those in external directories.
 
 #[commands.build]
 #cmd = "go build ./..."         # The shell command or executable to run
 #description = "Build the project"
+#version = "1.0.0"              # (Optional) Version of the command
 #is_enabled = true              # Enable or disable this command
 #is_executable = false          # If true, run as an executable; if false, run in shell
 #mcp = "example"                # (Optional) Assign this command to a specific MCP server
 #arguments = [                  # (Optional) List of arguments for this command
 #  { name = "output_file", type = "string", description = "Output file name", required = true },
 #  { name = "package", type = "string", description = "Package to build", default = "./cmd/app" }
+#]
+#examples = [                   # (Optional) Usage examples for the command
+#  {
+#    description = "Build the main application",
+#    command = "interop run build output_file=my-app"
+#  },
+#  {
+#    description = "Build a specific package",
+#    command = "interop run build output_file=my-tool package=./cmd/tool"
+#  }
 #]
 
 #[commands.test]
@@ -613,6 +669,93 @@ func ValidateMCPConfig(cfg *Settings) error {
 	return nil
 }
 
+// loadCommandsFromDirectory loads command definitions from TOML files in a directory
+func loadCommandsFromDirectory(dirPath string) (map[string]CommandConfig, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user home directory: %w", err)
+	}
+
+	// Handle tilde expansion
+	if strings.HasPrefix(dirPath, "~/") {
+		dirPath = filepath.Join(homeDir, dirPath[2:])
+	} else if !filepath.IsAbs(dirPath) {
+		dirPath = filepath.Join(homeDir, dirPath)
+	}
+
+	// Check if directory exists
+	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
+		logging.Warning("Command directory does not exist: %s", dirPath)
+		return map[string]CommandConfig{}, nil
+	}
+
+	commands := make(map[string]CommandConfig)
+
+	// Read all .toml files in the directory
+	files, err := filepath.Glob(filepath.Join(dirPath, "*.toml"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to list TOML files in %s: %w", dirPath, err)
+	}
+
+	// Sort files alphabetically for consistent loading order
+	sort.Strings(files)
+
+	for _, file := range files {
+		var fileCommands struct {
+			Commands map[string]CommandConfig `toml:"commands"`
+		}
+
+		if _, err := toml.DecodeFile(file, &fileCommands); err != nil {
+			logging.Warning("Failed to parse command file %s: %v", file, err)
+			continue
+		}
+
+		// Merge commands from this file
+		for name, cmd := range fileCommands.Commands {
+			if _, exists := commands[name]; exists {
+				logging.Warning("Duplicate command '%s' found in %s, keeping first occurrence", name, file)
+				continue
+			}
+			commands[name] = cmd
+			logging.Message("Loaded command '%s' from %s", name, file)
+		}
+	}
+
+	return commands, nil
+}
+
+// mergeCommands merges commands from multiple sources with precedence rules
+// Priority order: main settings.toml > command_dirs (in order) > within dir (alphabetical)
+func mergeCommands(mainCommands map[string]CommandConfig, commandDirs []string) (map[string]CommandConfig, []string) {
+	result := make(map[string]CommandConfig)
+	var conflicts []string
+
+	// Start with main commands (highest priority)
+	for name, cmd := range mainCommands {
+		result[name] = cmd
+	}
+
+	// Load commands from each directory in order
+	for _, dir := range commandDirs {
+		dirCommands, err := loadCommandsFromDirectory(dir)
+		if err != nil {
+			logging.Warning("Failed to load commands from directory %s: %v", dir, err)
+			continue
+		}
+
+		// Merge directory commands
+		for name, cmd := range dirCommands {
+			if _, exists := result[name]; exists {
+				conflicts = append(conflicts, fmt.Sprintf("Command '%s' conflicts between main settings and %s", name, dir))
+				continue // Keep existing (higher priority)
+			}
+			result[name] = cmd
+		}
+	}
+
+	return result, conflicts
+}
+
 // Load parses settings.toml once.
 func Load() (*Settings, error) {
 	once.Do(func() {
@@ -672,6 +815,23 @@ func Load() (*Settings, error) {
 		}
 		if c.MCPServers == nil {
 			c.MCPServers = make(map[string]MCPServer)
+		}
+
+		// Load commands from command directories
+		if len(c.CommandDirs) > 0 {
+			mergedCommands, conflicts := mergeCommands(c.Commands, c.CommandDirs)
+			c.Commands = mergedCommands
+			
+			// Log conflicts for visibility
+			for _, conflict := range conflicts {
+				logging.Warning(conflict)
+			}
+			
+			if len(conflicts) > 0 {
+				logging.Message("Found %d command name conflicts. Main settings.toml takes precedence.", len(conflicts))
+			}
+			
+			logging.Message("Loaded commands from %d directories", len(c.CommandDirs))
 		}
 
 		// Validate MCP configuration

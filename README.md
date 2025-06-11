@@ -15,8 +15,9 @@ Interop serves as a bridge between your development projects, custom commands, a
 
 - **Project Management**: Track and validate multiple project directories
 - **Command Execution**: Run commands with project context and arguments
-- **AI Integration**: Multiple MCP servers to expose commands to AI assistants
-- **Configuration Management**: TOML-based configuration with validation
+- **Dynamic Command Loading**: Load commands from multiple directories with precedence rules
+- **AI Integration**: Multiple MCP servers to expose commands to AI assistants with enhanced metadata
+- **Configuration Management**: TOML-based configuration with validation and conflict detection
 - **Cross-Platform Support**: Works on Linux, macOS, and Windows
 
 ## Installation
@@ -54,6 +55,7 @@ interop edit
 # Global settings
 log_level = "verbose"  # Options: error, warning, verbose
 executable_search_paths = ["~/.local/bin", "~/bin"]
+command_dirs = ["~/.config/interop/commands.d", "~/projects/shared/interop-commands"]
 mcp_port = 8081  # Default MCP server port
 
 # MCP Server Configurations
@@ -105,15 +107,26 @@ is_enabled = true
 is_executable = true
 mcp = "domain2"
 
-# Command with Arguments
+# Command with Arguments, Version, and Examples
 [commands.build-app]
 cmd = "go build -o ${output_file} ${package}"
 description = "Build a Go application"
+version = "1.1.0"
 is_enabled = true
 is_executable = false
 arguments = [
   { name = "output_file", type = "string", description = "Output file name", required = true },
   { name = "package", type = "string", description = "Package to build", default = "./cmd/app" }
+]
+examples = [
+  {
+    description = "Build the main application",
+    command = "interop run build-app output_file=my-app"
+  },
+  {
+    description = "Build a specific package",
+    command = "interop run build-app output_file=my-tool package=./cmd/tool"
+  }
 ]
 ```
 
@@ -157,6 +170,67 @@ Each project includes:
 - **Path**: Directory location (validated for existence)
 - **Description**: Optional project description
 - **Commands**: List of commands with optional aliases
+
+## Dynamic Command Loading
+
+Interop supports loading command definitions from multiple directories, enabling better organization and scalability for large command collections.
+
+### Configuration
+
+Add `command_dirs` to your global settings to specify directories containing command definition files:
+
+```toml
+command_dirs = [
+  "~/.config/interop/commands.d",
+  "~/projects/shared/interop-commands"
+]
+```
+
+### Command Directory Structure
+
+Each directory can contain multiple `*.toml` files with command definitions:
+
+```
+~/.config/interop/commands.d/
+├── git.toml
+├── docker.toml
+└── kubernetes.toml
+```
+
+Example `git.toml`:
+
+```toml
+[commands.git-status]
+cmd = "git status"
+description = "Show the working tree status"
+version = "1.0.0"
+is_enabled = true
+mcp = "dev-tools"
+
+[commands.git-pull]
+cmd = "git pull --rebase"
+description = "Fetch from and integrate with another repository"
+version = "1.0.0"
+is_enabled = true
+mcp = "dev-tools"
+```
+
+### Precedence Rules
+
+When command names conflict, Interop follows a clear precedence order:
+
+1. **Main `settings.toml`** (highest priority)
+2. **Command directories** in the order specified in `command_dirs`
+3. **Files within directories** in alphabetical order
+
+This ensures predictable command resolution and allows for easy overriding of shared commands.
+
+### Benefits
+
+- **Organization**: Group related commands in separate files
+- **Sharing**: Share command collections across teams or projects
+- **Modularity**: Enable/disable entire command sets by directory
+- **Scalability**: Manage hundreds of commands without cluttering main config
 
 ## Command Management
 
@@ -386,6 +460,56 @@ python3 scripts/update_strings.py --keys key1 key2 --language en --verbose
 - No need to escape special characters in argument values
 - Compatible with tools that require specific argument formats
 
+## Enhanced Command Metadata
+
+Interop supports rich metadata for commands to improve AI assistant integration and documentation.
+
+### Version Information
+
+Add version tracking to your commands:
+
+```toml
+[commands.deploy]
+cmd = "deploy.sh"
+description = "Deploy the application"
+version = "2.1.0"
+is_enabled = true
+```
+
+### Usage Examples
+
+Provide concrete examples of how to use commands:
+
+```toml
+[commands.create-component]
+cmd = "generate.sh ${type} ${name}"
+description = "Generate a new component"
+version = "1.0.0"
+arguments = [
+  { name = "type", type = "string", description = "Component type", required = true },
+  { name = "name", type = "string", description = "Component name", required = true }
+]
+examples = [
+  {
+    description = "Create a React component",
+    command = "interop run create-component type=react name=Button"
+  },
+  {
+    description = "Create a Vue component", 
+    command = "interop run create-component type=vue name=Header"
+  }
+]
+```
+
+### Benefits for AI Integration
+
+When commands include version and examples:
+
+- **AI assistants** can provide more accurate suggestions
+- **Documentation** is generated automatically
+- **Team onboarding** becomes easier with concrete examples
+- **Version tracking** helps with compatibility and updates
+
 ## Validation & Diagnostics
 
 ### Validate Configuration
@@ -400,6 +524,8 @@ This validates:
 - No conflicting aliases
 - Required command arguments have definitions
 - MCP server ports don't conflict
+- Command name conflicts between main settings and command directories
+- Command directory accessibility and TOML syntax
 
 ### Port Checking
 

@@ -456,6 +456,20 @@ func (s *MCPLibServer) registerSingleCommandTool(name string, cmdConfig settings
 		mcp.WithDescription(cmdConfig.Description),
 	}
 
+	// Add version information if available
+	if cmdConfig.Version != "" {
+		// Note: mcp-go doesn't have a built-in version option, so we'll include it in the description
+		description := cmdConfig.Description
+		if description == "" {
+			description = fmt.Sprintf("Version: %s", cmdConfig.Version)
+		} else {
+			description = fmt.Sprintf("%s (Version: %s)", description, cmdConfig.Version)
+		}
+		toolOptions = []mcp.ToolOption{
+			mcp.WithDescription(description),
+		}
+	}
+
 	// Add project_path parameter for global commands
 	if isGlobalCommand {
 		toolOptions = append(toolOptions,
@@ -804,6 +818,8 @@ func (s *MCPLibServer) executeCommandWithPath(name, cmdStr string, args map[stri
 	// Return sanitized output
 	return sanitizeOutput(string(output)), nil
 }
+
+
 
 // Start starts the MCP server in either stdio or SSE mode
 func (s *MCPLibServer) Start() error {
