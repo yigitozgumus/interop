@@ -67,6 +67,8 @@ type CommandConfig struct {
 	IsEnabled    bool              `toml:"is_enabled"`
 	Cmd          string            `toml:"cmd"`
 	IsExecutable bool              `toml:"is_executable"`
+	PreExec      []string          `toml:"pre_exec,omitempty"`  // Commands to run before the main command
+	PostExec     []string          `toml:"post_exec,omitempty"` // Commands to run after the main command
 	Arguments    []CommandArgument `toml:"arguments,omitempty"` // Argument definitions for the command
 	MCP          string            `toml:"mcp,omitempty"`       // Optional MCP server name this command belongs to
 	Version      string            `toml:"version,omitempty"`   // Version of the command
@@ -79,6 +81,8 @@ func NewCommandConfig() CommandConfig {
 	return CommandConfig{
 		IsEnabled:    true,
 		IsExecutable: false,
+		PreExec:      []string{},
+		PostExec:     []string{},
 		Arguments:    []CommandArgument{},
 		MCP:          "",
 		Version:      "",
@@ -94,6 +98,8 @@ func (c *CommandConfig) UnmarshalTOML(data interface{}) error {
 	c.IsEnabled = true
 	c.IsExecutable = false
 	c.Description = ""
+	c.PreExec = []string{}
+	c.PostExec = []string{}
 	c.Arguments = []CommandArgument{}
 	c.MCP = ""
 	c.Version = ""
@@ -120,6 +126,24 @@ func (c *CommandConfig) UnmarshalTOML(data interface{}) error {
 		}
 		if version, ok := v["version"].(string); ok {
 			c.Version = version
+		}
+
+		// Parse pre_exec commands if present
+		if preExec, ok := v["pre_exec"].([]interface{}); ok {
+			for _, cmd := range preExec {
+				if cmdStr, ok := cmd.(string); ok {
+					c.PreExec = append(c.PreExec, cmdStr)
+				}
+			}
+		}
+
+		// Parse post_exec commands if present
+		if postExec, ok := v["post_exec"].([]interface{}); ok {
+			for _, cmd := range postExec {
+				if cmdStr, ok := cmd.(string); ok {
+					c.PostExec = append(c.PostExec, cmdStr)
+				}
+			}
 		}
 
 		// Parse arguments if present

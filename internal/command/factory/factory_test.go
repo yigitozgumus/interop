@@ -80,6 +80,79 @@ func TestFactory_Create(t *testing.T) {
 	}
 }
 
+func TestFactory_CreateWithHooks(t *testing.T) {
+	// Create test shell info
+	shellInfo := &shell.Info{
+		Path:   "/bin/sh",
+		Option: "-c",
+		Name:   "sh",
+	}
+
+	// Create test settings with hooks
+	testSettings := &settings.Settings{
+		Commands: map[string]settings.CommandConfig{
+			"cmd-with-hooks": {
+				Description:  "Command with hooks",
+				IsEnabled:    true,
+				Cmd:          "echo 'main command'",
+				IsExecutable: false,
+				PreExec:      []string{"echo 'pre-hook 1'", "echo 'pre-hook 2'"},
+				PostExec:     []string{"echo 'post-hook 1'", "echo 'post-hook 2'"},
+			},
+			"cmd-without-hooks": {
+				Description:  "Command without hooks",
+				IsEnabled:    true,
+				Cmd:          "echo 'no hooks'",
+				IsExecutable: false,
+				PreExec:      []string{},
+				PostExec:     []string{},
+			},
+		},
+		ExecutableSearchPaths: []string{},
+	}
+
+	// Create executor
+	executor := execution.NewExecutor()
+
+	// Create factory
+	factory, err := NewFactory(testSettings, executor, shellInfo)
+	if err != nil {
+		t.Fatalf("Failed to create factory: %v", err)
+	}
+
+	// Test creating a command with hooks
+	cmd, err := factory.Create("cmd-with-hooks", "/test/dir")
+	if err != nil {
+		t.Errorf("Expected to create command with hooks but got error: %v", err)
+	} else {
+		if len(cmd.PreExec) != 2 {
+			t.Errorf("Expected 2 pre-exec hooks but got %d", len(cmd.PreExec))
+		}
+		if len(cmd.PostExec) != 2 {
+			t.Errorf("Expected 2 post-exec hooks but got %d", len(cmd.PostExec))
+		}
+		if cmd.PreExec[0] != "echo 'pre-hook 1'" {
+			t.Errorf("Expected first pre-exec hook to be 'echo 'pre-hook 1'' but got %s", cmd.PreExec[0])
+		}
+		if cmd.PostExec[1] != "echo 'post-hook 2'" {
+			t.Errorf("Expected second post-exec hook to be 'echo 'post-hook 2'' but got %s", cmd.PostExec[1])
+		}
+	}
+
+	// Test creating a command without hooks
+	cmd, err = factory.Create("cmd-without-hooks", "/test/dir")
+	if err != nil {
+		t.Errorf("Expected to create command without hooks but got error: %v", err)
+	} else {
+		if len(cmd.PreExec) != 0 {
+			t.Errorf("Expected 0 pre-exec hooks but got %d", len(cmd.PreExec))
+		}
+		if len(cmd.PostExec) != 0 {
+			t.Errorf("Expected 0 post-exec hooks but got %d", len(cmd.PostExec))
+		}
+	}
+}
+
 func TestFactory_CreateFromAlias(t *testing.T) {
 	// Create a temporary directory for testing
 	homeDir, err := os.UserHomeDir()

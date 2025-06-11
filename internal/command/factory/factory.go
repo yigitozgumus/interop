@@ -57,6 +57,8 @@ type Command struct {
 	Enabled     bool
 	Env         []string // Environment variables
 	ProjectName string   // Project name for environment merging
+	PreExec     []string // Commands to run before the main command
+	PostExec    []string // Commands to run after the main command
 }
 
 // Create creates a command instance from a command configuration
@@ -158,6 +160,8 @@ func (f *Factory) createShellCommand(name string, config settings.CommandConfig,
 		Type:        ShellCommand,
 		Enabled:     config.IsEnabled,
 		ProjectName: "", // Will be set later for project commands
+		PreExec:     config.PreExec,
+		PostExec:    config.PostExec,
 	}, nil
 }
 
@@ -205,12 +209,62 @@ func (f *Factory) createExecutableCommand(name string, config settings.CommandCo
 		Type:        ExecutableCommand,
 		Enabled:     config.IsEnabled,
 		ProjectName: "", // Will be set later for project commands
+		PreExec:     config.PreExec,
+		PostExec:    config.PostExec,
 	}, nil
+}
+
+// executeHookCommand executes a single hook command
+func (c *Command) executeHookCommand(hookCmd string) error {
+	// Create a temporary execution.Command for the hook
+	hookExecCmd := &execution.Command{
+		Dir: c.Dir, // Use the same working directory as the main command
+		Env: c.Env, // Use the same environment as the main command
+	}
+
+	// Determine how to execute the hook command
+	if strings.HasPrefix(hookCmd, "interop ") {
+		// Handle interop commands
+		args := strings.Fields(hookCmd)[1:] // Skip "interop"
+
+		interopPath, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("failed to get current executable path: %w", err)
+		}
+
+		hookExecCmd.Path = interopPath
+		hookExecCmd.Args = args
+	} else {
+		// Handle regular shell commands
+		shellInfo, err := shell.DetectShell()
+		if err != nil {
+			return fmt.Errorf("failed to detect shell for hook execution: %w", err)
+		}
+
+		hookExecCmd.Path = shellInfo.Path
+		hookExecCmd.Args = []string{shellInfo.Option, hookCmd}
+	}
+
+	// Execute the hook command
+	logging.Message("Executing hook command: %s", hookCmd)
+	return execution.NewExecutor().Execute(hookExecCmd)
 }
 
 // RunWithArgs executes the command with additional arguments
 func (c *Command) RunWithArgs(args []string) error {
 	logging.Message("Running command: %s with args: %v in directory: %s", c.Name, args, c.Dir)
+
+	// Execute pre-execution hooks
+	if len(c.PreExec) > 0 {
+		logging.Message("Executing %d pre-execution hook(s)", len(c.PreExec))
+		for i, hookCmd := range c.PreExec {
+			logging.Message("Running pre-exec hook %d: %s", i+1, hookCmd)
+			if err := c.executeHookCommand(hookCmd); err != nil {
+				return fmt.Errorf("pre-execution hook %d failed: %w", i+1, err)
+			}
+		}
+		logging.Message("All pre-execution hooks completed successfully")
+	}
 
 	// Set up command execution
 	cmd := &execution.Command{
@@ -316,8 +370,24 @@ func (c *Command) RunWithArgs(args []string) error {
 					logging.Message("Command with prefixed args: %s", newCmd)
 					cmd.Args[1] = newCmd
 
-					// We've handled the arguments, so return early
-					return execution.NewExecutor().Execute(cmd)
+					// We've handled the arguments, execute the main command
+					mainCmdErr := execution.NewExecutor().Execute(cmd)
+
+					// Execute post-execution hooks (regardless of main command success/failure)
+					if len(c.PostExec) > 0 {
+						logging.Message("Executing %d post-execution hook(s)", len(c.PostExec))
+						for i, hookCmd := range c.PostExec {
+							logging.Message("Running post-exec hook %d: %s", i+1, hookCmd)
+							if hookErr := c.executeHookCommand(hookCmd); hookErr != nil {
+								logging.Error("Post-execution hook %d failed: %v", i+1, hookErr)
+								// Continue with other post-exec hooks even if one fails
+							}
+						}
+						logging.Message("All post-execution hooks completed")
+					}
+
+					// Return the error from the main command (if any)
+					return mainCmdErr
 				}
 			}
 		}
@@ -336,6 +406,22 @@ func (c *Command) RunWithArgs(args []string) error {
 		}
 	}
 
-	// Run the command
-	return execution.NewExecutor().Execute(cmd)
+	// Run the main command
+	mainCmdErr := execution.NewExecutor().Execute(cmd)
+
+	// Execute post-execution hooks (regardless of main command success/failure)
+	if len(c.PostExec) > 0 {
+		logging.Message("Executing %d post-execution hook(s)", len(c.PostExec))
+		for i, hookCmd := range c.PostExec {
+			logging.Message("Running post-exec hook %d: %s", i+1, hookCmd)
+			if hookErr := c.executeHookCommand(hookCmd); hookErr != nil {
+				logging.Error("Post-execution hook %d failed: %v", i+1, hookErr)
+				// Continue with other post-exec hooks even if one fails
+			}
+		}
+		logging.Message("All post-execution hooks completed")
+	}
+
+	// Return the error from the main command (if any)
+	return mainCmdErr
 }

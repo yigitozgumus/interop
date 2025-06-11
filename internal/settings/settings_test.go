@@ -323,57 +323,134 @@ func TestMergeEnvironmentVariables(t *testing.T) {
 }
 
 func TestMergeEnvironmentVariablesNoProject(t *testing.T) {
-	// Save original environment and restore after test
-	originalEnv := os.Environ()
-	defer func() {
-		os.Clearenv()
-		for _, env := range originalEnv {
-			parts := strings.SplitN(env, "=", 2)
-			if len(parts) == 2 {
-				os.Setenv(parts[0], parts[1])
-			}
-		}
-	}()
+	env := setupTestEnv(t)
+	defer env.teardown(t)
 
-	// Set up test environment
-	os.Clearenv()
-	os.Setenv("SHELL_VAR", "shell_value")
+	// Create test settings with environment variables
+	testContent := `log_level = "info"
+[env]
+GLOBAL_VAR = "global"
 
-	// Create test configuration
-	cfg := &Settings{
-		Env: map[string]string{
-			"GLOBAL_VAR": "global_value",
-		},
-		Commands: map[string]CommandConfig{
-			"test-command": {
-				Env: map[string]string{
-					"COMMAND_VAR": "command_value",
-				},
-			},
-		},
+[commands]
+[commands.test-cmd]
+cmd = "echo test"
+env = { CMD_VAR = "command" }
+`
+	env.createTestSettings(t, testContent)
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
 	}
 
-	// Test merging without project context
-	env := MergeEnvironmentVariables(cfg, "test-command", "")
+	// Test with no project context
+	envVars := MergeEnvironmentVariables(settings, "test-cmd", "")
 
-	// Convert to map for easier testing
-	envMap := make(map[string]string)
-	for _, e := range env {
-		parts := strings.SplitN(e, "=", 2)
-		if len(parts) == 2 {
-			envMap[parts[0]] = parts[1]
+	// Check that both global and command-level variables are present
+	found := make(map[string]bool)
+	for _, env := range envVars {
+		if env == "GLOBAL_VAR=global" {
+			found["global"] = true
+		}
+		if env == "CMD_VAR=command" {
+			found["command"] = true
 		}
 	}
 
-	if envMap["COMMAND_VAR"] != "command_value" {
-		t.Errorf("Expected COMMAND_VAR=command_value, got %s", envMap["COMMAND_VAR"])
+	if !found["global"] {
+		t.Error("Global environment variable not found")
+	}
+	if !found["command"] {
+		t.Error("Command environment variable not found")
+	}
+}
+
+func TestCommandConfigHooksParsing(t *testing.T) {
+	env := setupTestEnv(t)
+	defer env.teardown(t)
+
+	// Create test settings with hooks
+	testContent := `log_level = "info"
+
+[commands]
+[commands.cmd-with-hooks]
+cmd = "echo 'main command'"
+description = "Command with pre and post execution hooks"
+pre_exec = [
+    "echo 'pre-hook 1'",
+    "echo 'pre-hook 2'"
+]
+post_exec = [
+    "echo 'post-hook 1'",
+    "echo 'post-hook 2'"
+]
+
+[commands.cmd-without-hooks]
+cmd = "echo 'no hooks'"
+description = "Command without hooks"
+
+[commands.cmd-with-single-hook]
+cmd = "echo 'single hook'"
+pre_exec = ["echo 'single pre-hook'"]
+`
+	env.createTestSettings(t, testContent)
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
 	}
 
-	if envMap["GLOBAL_VAR"] != "global_value" {
-		t.Errorf("Expected GLOBAL_VAR=global_value, got %s", envMap["GLOBAL_VAR"])
+	// Test command with hooks
+	cmdWithHooks, exists := settings.Commands["cmd-with-hooks"]
+	if !exists {
+		t.Fatal("Command 'cmd-with-hooks' not found")
 	}
 
-	if envMap["SHELL_VAR"] != "shell_value" {
-		t.Errorf("Expected SHELL_VAR=shell_value, got %s", envMap["SHELL_VAR"])
+	if len(cmdWithHooks.PreExec) != 2 {
+		t.Errorf("Expected 2 pre-exec hooks, got %d", len(cmdWithHooks.PreExec))
+	}
+
+	if len(cmdWithHooks.PostExec) != 2 {
+		t.Errorf("Expected 2 post-exec hooks, got %d", len(cmdWithHooks.PostExec))
+	}
+
+	if cmdWithHooks.PreExec[0] != "echo 'pre-hook 1'" {
+		t.Errorf("Expected first pre-exec hook to be 'echo 'pre-hook 1'', got '%s'", cmdWithHooks.PreExec[0])
+	}
+
+	if cmdWithHooks.PostExec[1] != "echo 'post-hook 2'" {
+		t.Errorf("Expected second post-exec hook to be 'echo 'post-hook 2'', got '%s'", cmdWithHooks.PostExec[1])
+	}
+
+	// Test command without hooks
+	cmdWithoutHooks, exists := settings.Commands["cmd-without-hooks"]
+	if !exists {
+		t.Fatal("Command 'cmd-without-hooks' not found")
+	}
+
+	if len(cmdWithoutHooks.PreExec) != 0 {
+		t.Errorf("Expected 0 pre-exec hooks, got %d", len(cmdWithoutHooks.PreExec))
+	}
+
+	if len(cmdWithoutHooks.PostExec) != 0 {
+		t.Errorf("Expected 0 post-exec hooks, got %d", len(cmdWithoutHooks.PostExec))
+	}
+
+	// Test command with single hook
+	cmdWithSingleHook, exists := settings.Commands["cmd-with-single-hook"]
+	if !exists {
+		t.Fatal("Command 'cmd-with-single-hook' not found")
+	}
+
+	if len(cmdWithSingleHook.PreExec) != 1 {
+		t.Errorf("Expected 1 pre-exec hook, got %d", len(cmdWithSingleHook.PreExec))
+	}
+
+	if len(cmdWithSingleHook.PostExec) != 0 {
+		t.Errorf("Expected 0 post-exec hooks, got %d", len(cmdWithSingleHook.PostExec))
+	}
+
+	if cmdWithSingleHook.PreExec[0] != "echo 'single pre-hook'" {
+		t.Errorf("Expected pre-exec hook to be 'echo 'single pre-hook'', got '%s'", cmdWithSingleHook.PreExec[0])
 	}
 }

@@ -20,6 +20,8 @@ type CommandInfo struct {
 	IsEnabled    bool
 	Cmd          string
 	IsExecutable bool
+	PreExec      []string // Commands to run before the main command
+	PostExec     []string // Commands to run after the main command
 }
 
 // Command represents a command to be executed
@@ -49,6 +51,51 @@ func WithTimeout(timeout time.Duration) *Executor {
 	}
 }
 
+// executeHookCommand executes a single hook command (pre or post exec)
+func executeHookCommand(hookCmd string, executableSearchPaths []string) error {
+	userShell := shell.GetUserShell()
+
+	var commandToRun *exec.Cmd
+
+	// Check if this is an interop command (starts with "interop ")
+	if strings.HasPrefix(hookCmd, "interop ") {
+		// Extract the arguments after "interop"
+		args := strings.Fields(hookCmd)[1:] // Skip "interop"
+
+		// Execute the interop command by finding the current executable
+		interopPath, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("failed to get current executable path: %w", err)
+		}
+
+		logging.Message("Running interop hook command: %s", hookCmd)
+		commandToRun = exec.Command(interopPath, args...)
+	} else if shell.IsAliasCommand(hookCmd) {
+		logging.Message("Running shell alias hook: %s", hookCmd)
+		commandToRun = userShell.ExecuteAlias(hookCmd)
+	} else if shell.IsLocalScriptCommand(hookCmd) {
+		scriptPath, scriptArgs := shell.ParseLocalScript(hookCmd)
+		logging.Message("Running local script hook: %s with arguments: %v", scriptPath, scriptArgs)
+
+		var err error
+		commandToRun, err = userShell.ExecuteScript(scriptPath, scriptArgs...)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Standard shell command
+		logging.Message("Running shell hook command: %s", hookCmd)
+		commandToRun = userShell.ExecuteCommand(hookCmd)
+	}
+
+	// Set up the command to use the current terminal
+	commandToRun.Stdin = os.Stdin
+	commandToRun.Stdout = os.Stdout
+	commandToRun.Stderr = os.Stderr
+
+	return commandToRun.Run()
+}
+
 // Run executes a command by name
 func Run(command CommandInfo, executablesPath string, projectPath ...string) error {
 	return RunWithSearchPathsAndArgs(command, []string{executablesPath}, nil, projectPath...)
@@ -61,6 +108,18 @@ func RunWithSearchPathsAndArgs(command CommandInfo, executableSearchPaths []stri
 	}
 
 	logging.Message("Command '%s' is enabled, proceeding with execution", command.Name)
+
+	// Execute pre-execution hooks
+	if len(command.PreExec) > 0 {
+		logging.Message("Executing %d pre-execution hook(s)", len(command.PreExec))
+		for i, hookCmd := range command.PreExec {
+			logging.Message("Running pre-exec hook %d: %s", i+1, hookCmd)
+			if err := executeHookCommand(hookCmd, executableSearchPaths); err != nil {
+				return fmt.Errorf("pre-execution hook %d failed: %w", i+1, err)
+			}
+		}
+		logging.Message("All pre-execution hooks completed successfully")
+	}
 
 	// Store current working directory if we need to change to project directory
 	var currentDir string
@@ -175,8 +234,24 @@ func RunWithSearchPathsAndArgs(command CommandInfo, executableSearchPaths []stri
 	commandToRun.Stdout = os.Stdout
 	commandToRun.Stderr = os.Stderr
 
-	// Run the command
-	return commandToRun.Run()
+	// Run the main command
+	mainCmdErr := commandToRun.Run()
+
+	// Execute post-execution hooks (regardless of main command success/failure)
+	if len(command.PostExec) > 0 {
+		logging.Message("Executing %d post-execution hook(s)", len(command.PostExec))
+		for i, hookCmd := range command.PostExec {
+			logging.Message("Running post-exec hook %d: %s", i+1, hookCmd)
+			if hookErr := executeHookCommand(hookCmd, executableSearchPaths); hookErr != nil {
+				logging.Error("Post-execution hook %d failed: %v", i+1, hookErr)
+				// Continue with other post-exec hooks even if one fails
+			}
+		}
+		logging.Message("All post-execution hooks completed")
+	}
+
+	// Return the error from the main command (if any)
+	return mainCmdErr
 }
 
 // FindExecutable searches for an executable in the provided search paths

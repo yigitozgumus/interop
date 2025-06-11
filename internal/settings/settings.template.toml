@@ -152,6 +152,13 @@
 #mcp = "example"                # (Optional) Assign this command to a specific MCP server
 # Command-specific environment variables (highest priority, override all others)
 #env = { LOG_LEVEL = "debug", CGO_ENABLED = "0" }
+#pre_exec = [                   # (Optional) Commands to run before the main command
+#  "echo 'Starting build...'",
+#  "go mod tidy"
+#]
+#post_exec = [                  # (Optional) Commands to run after the main command
+#  "echo 'Build completed'"
+#]
 #arguments = [                  # (Optional) List of arguments for this command
 #  { name = "output_file", type = "string", description = "Output file name", required = true },
 #  { name = "package", type = "string", description = "Package to build", default = "./cmd/app" }
@@ -212,6 +219,27 @@
 # - API_PORT=8080 (from project)
 # - NODE_ENV=development (from global)
 # - Plus all existing shell environment variables (lowest priority)
+
+# =====================
+# PRE- AND POST-EXECUTION HOOKS EXAMPLE
+# =====================
+# This example demonstrates using pre_exec and post_exec hooks for complex workflows
+
+#[commands.run-integration-tests]
+#cmd = "npm test"
+#description = "Run the integration test suite"
+#pre_exec = [
+#    "docker-compose up -d test-db", # Start a database
+#    "sleep 5",
+#    "interop run db-migrate"         # Use another interop command
+#]
+#post_exec = [
+#    "docker-compose down" # Always run to clean up
+#]
+
+#[commands.db-migrate]
+#cmd = "npm run migrate"
+#description = "Run database migrations"
 
 # =====================
 # END OF TEMPLATE
