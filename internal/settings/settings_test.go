@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -242,5 +243,137 @@ description = "Path outside home"
 	// that all projects are still in the settings
 	if len(settings.Projects) != 3 {
 		t.Errorf("Expected 3 projects, got %d", len(settings.Projects))
+	}
+}
+
+func TestMergeEnvironmentVariables(t *testing.T) {
+	// Save original environment and restore after test
+	originalEnv := os.Environ()
+	defer func() {
+		os.Clearenv()
+		for _, env := range originalEnv {
+			parts := strings.SplitN(env, "=", 2)
+			if len(parts) == 2 {
+				os.Setenv(parts[0], parts[1])
+			}
+		}
+	}()
+
+	// Set up test environment
+	os.Clearenv()
+	os.Setenv("SHELL_VAR", "shell_value")
+	os.Setenv("LOG_LEVEL", "shell_info")
+
+	// Create test configuration
+	cfg := &Settings{
+		Env: map[string]string{
+			"GLOBAL_VAR": "global_value",
+			"LOG_LEVEL":  "global_debug",
+		},
+		Projects: map[string]Project{
+			"test-project": {
+				Env: map[string]string{
+					"PROJECT_VAR": "project_value",
+					"LOG_LEVEL":   "project_warn",
+				},
+			},
+		},
+		Commands: map[string]CommandConfig{
+			"test-command": {
+				Env: map[string]string{
+					"COMMAND_VAR": "command_value",
+					"LOG_LEVEL":   "command_error",
+				},
+			},
+		},
+	}
+
+	// Test merging with all levels
+	env := MergeEnvironmentVariables(cfg, "test-command", "test-project")
+
+	// Convert to map for easier testing
+	envMap := make(map[string]string)
+	for _, e := range env {
+		parts := strings.SplitN(e, "=", 2)
+		if len(parts) == 2 {
+			envMap[parts[0]] = parts[1]
+		}
+	}
+
+	// Test precedence: command > project > global > shell
+	if envMap["LOG_LEVEL"] != "command_error" {
+		t.Errorf("Expected LOG_LEVEL=command_error, got %s", envMap["LOG_LEVEL"])
+	}
+
+	if envMap["COMMAND_VAR"] != "command_value" {
+		t.Errorf("Expected COMMAND_VAR=command_value, got %s", envMap["COMMAND_VAR"])
+	}
+
+	if envMap["PROJECT_VAR"] != "project_value" {
+		t.Errorf("Expected PROJECT_VAR=project_value, got %s", envMap["PROJECT_VAR"])
+	}
+
+	if envMap["GLOBAL_VAR"] != "global_value" {
+		t.Errorf("Expected GLOBAL_VAR=global_value, got %s", envMap["GLOBAL_VAR"])
+	}
+
+	if envMap["SHELL_VAR"] != "shell_value" {
+		t.Errorf("Expected SHELL_VAR=shell_value, got %s", envMap["SHELL_VAR"])
+	}
+}
+
+func TestMergeEnvironmentVariablesNoProject(t *testing.T) {
+	// Save original environment and restore after test
+	originalEnv := os.Environ()
+	defer func() {
+		os.Clearenv()
+		for _, env := range originalEnv {
+			parts := strings.SplitN(env, "=", 2)
+			if len(parts) == 2 {
+				os.Setenv(parts[0], parts[1])
+			}
+		}
+	}()
+
+	// Set up test environment
+	os.Clearenv()
+	os.Setenv("SHELL_VAR", "shell_value")
+
+	// Create test configuration
+	cfg := &Settings{
+		Env: map[string]string{
+			"GLOBAL_VAR": "global_value",
+		},
+		Commands: map[string]CommandConfig{
+			"test-command": {
+				Env: map[string]string{
+					"COMMAND_VAR": "command_value",
+				},
+			},
+		},
+	}
+
+	// Test merging without project context
+	env := MergeEnvironmentVariables(cfg, "test-command", "")
+
+	// Convert to map for easier testing
+	envMap := make(map[string]string)
+	for _, e := range env {
+		parts := strings.SplitN(e, "=", 2)
+		if len(parts) == 2 {
+			envMap[parts[0]] = parts[1]
+		}
+	}
+
+	if envMap["COMMAND_VAR"] != "command_value" {
+		t.Errorf("Expected COMMAND_VAR=command_value, got %s", envMap["COMMAND_VAR"])
+	}
+
+	if envMap["GLOBAL_VAR"] != "global_value" {
+		t.Errorf("Expected GLOBAL_VAR=global_value, got %s", envMap["GLOBAL_VAR"])
+	}
+
+	if envMap["SHELL_VAR"] != "shell_value" {
+		t.Errorf("Expected SHELL_VAR=shell_value, got %s", envMap["SHELL_VAR"])
 	}
 }

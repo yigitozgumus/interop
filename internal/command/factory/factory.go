@@ -55,6 +55,8 @@ type Command struct {
 	Dir         string
 	Type        CommandType
 	Enabled     bool
+	Env         []string // Environment variables
+	ProjectName string   // Project name for environment merging
 }
 
 // Create creates a command instance from a command configuration
@@ -134,7 +136,15 @@ func (f *Factory) CreateFromAlias(projectName string, alias string) (*Command, e
 	logging.Message("Project path: %s", projectPath)
 
 	// Create the command
-	return f.Create(cmdName, projectPath)
+	cmd, err := f.Create(cmdName, projectPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set the project name for environment merging
+	cmd.ProjectName = projectName
+
+	return cmd, nil
 }
 
 // createShellCommand creates a shell command from configuration
@@ -147,6 +157,7 @@ func (f *Factory) createShellCommand(name string, config settings.CommandConfig,
 		Dir:         workDir,
 		Type:        ShellCommand,
 		Enabled:     config.IsEnabled,
+		ProjectName: "", // Will be set later for project commands
 	}, nil
 }
 
@@ -193,6 +204,7 @@ func (f *Factory) createExecutableCommand(name string, config settings.CommandCo
 		Dir:         workDir,
 		Type:        ExecutableCommand,
 		Enabled:     config.IsEnabled,
+		ProjectName: "", // Will be set later for project commands
 	}, nil
 }
 
@@ -213,6 +225,9 @@ func (c *Command) RunWithArgs(args []string) error {
 		logging.Warning("Failed to load settings for prefixed arguments: %v", err)
 		// Continue with normal argument handling
 	} else {
+		// Merge environment variables with proper precedence
+		cmd.Env = settings.MergeEnvironmentVariables(cfg, c.Name, c.ProjectName)
+
 		// Get the command config to check for prefixed arguments
 		cmdConfig, exists := cfg.Commands[c.Name]
 		if exists && len(cmdConfig.Arguments) > 0 && len(args) > 0 {

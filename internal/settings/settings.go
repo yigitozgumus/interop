@@ -27,9 +27,10 @@ type MCPServer struct {
 }
 
 type Project struct {
-	Path        string  `toml:"path"`
-	Description string  `toml:"description,omitempty"`
-	Commands    []Alias `toml:"commands,omitempty"`
+	Path        string            `toml:"path"`
+	Description string            `toml:"description,omitempty"`
+	Commands    []Alias           `toml:"commands,omitempty"`
+	Env         map[string]string `toml:"env,omitempty"`
 }
 
 // ArgumentType defines the type of a command argument
@@ -70,6 +71,7 @@ type CommandConfig struct {
 	MCP          string            `toml:"mcp,omitempty"`       // Optional MCP server name this command belongs to
 	Version      string            `toml:"version,omitempty"`   // Version of the command
 	Examples     []CommandExample  `toml:"examples,omitempty"`  // Usage examples for the command
+	Env          map[string]string `toml:"env,omitempty"`       // Environment variables for the command
 }
 
 // NewCommandConfig creates a new CommandConfig with default values
@@ -81,6 +83,7 @@ func NewCommandConfig() CommandConfig {
 		MCP:          "",
 		Version:      "",
 		Examples:     []CommandExample{},
+		Env:          make(map[string]string),
 	}
 }
 
@@ -95,6 +98,7 @@ func (c *CommandConfig) UnmarshalTOML(data interface{}) error {
 	c.MCP = ""
 	c.Version = ""
 	c.Examples = []CommandExample{}
+	c.Env = make(map[string]string)
 
 	// Handle different input cases
 	switch v := data.(type) {
@@ -165,18 +169,27 @@ func (c *CommandConfig) UnmarshalTOML(data interface{}) error {
 			for _, ex := range examples {
 				if exMap, ok := ex.(map[string]interface{}); ok {
 					example := CommandExample{}
-					
+
 					if desc, ok := exMap["description"].(string); ok {
 						example.Description = desc
 					}
 					if cmd, ok := exMap["command"].(string); ok {
 						example.Command = cmd
 					}
-					
+
 					// Only add if both fields are present
 					if example.Description != "" && example.Command != "" {
 						c.Examples = append(c.Examples, example)
 					}
+				}
+			}
+		}
+
+		// Parse environment variables if present
+		if env, ok := v["env"].(map[string]interface{}); ok {
+			for key, value := range env {
+				if strValue, ok := value.(string); ok {
+					c.Env[key] = strValue
 				}
 			}
 		}
@@ -271,11 +284,12 @@ type PromptConfig struct {
 
 type Settings struct {
 	LogLevel              string                   `toml:"log_level"`
+	Env                   map[string]string        `toml:"env,omitempty"`
 	Projects              map[string]Project       `toml:"projects"`
 	Commands              map[string]CommandConfig `toml:"commands"`
 	Prompts               map[string]PromptConfig  `toml:"prompts"` // Add prompts configuration
 	ExecutableSearchPaths []string                 `toml:"executable_search_paths"`
-	CommandDirs           []string                 `toml:"command_dirs"`          // Directories to load additional command files from
+	CommandDirs           []string                 `toml:"command_dirs"` // Directories to load additional command files from
 	MCPPort               int                      `toml:"mcp_port"`
 	MCPServers            map[string]MCPServer     `toml:"mcp_servers"`
 }
@@ -821,16 +835,16 @@ func Load() (*Settings, error) {
 		if len(c.CommandDirs) > 0 {
 			mergedCommands, conflicts := mergeCommands(c.Commands, c.CommandDirs)
 			c.Commands = mergedCommands
-			
+
 			// Log conflicts for visibility
 			for _, conflict := range conflicts {
 				logging.Warning(conflict)
 			}
-			
+
 			if len(conflicts) > 0 {
 				logging.Message("Found %d command name conflicts. Main settings.toml takes precedence.", len(conflicts))
 			}
-			
+
 			logging.Message("Loaded commands from %d directories", len(c.CommandDirs))
 		}
 
@@ -982,4 +996,53 @@ func From(ctx context.Context) *Settings {
 		}
 	}
 	return Get()
+}
+
+// MergeEnvironmentVariables merges environment variables with the specified precedence:
+// 1. Command-level env (highest priority)
+// 2. Project-level env (if executed in a project context)
+// 3. Global-level env
+// 4. The shell's existing environment variables (lowest priority)
+func MergeEnvironmentVariables(cfg *Settings, commandName string, projectName string) []string {
+	// Start with the current environment
+	envMap := make(map[string]string)
+
+	// Copy all existing environment variables (lowest priority)
+	for _, env := range os.Environ() {
+		parts := strings.SplitN(env, "=", 2)
+		if len(parts) == 2 {
+			envMap[parts[0]] = parts[1]
+		}
+	}
+
+	// Apply global environment variables (3rd priority)
+	if cfg.Env != nil {
+		for key, value := range cfg.Env {
+			envMap[key] = value
+		}
+	}
+
+	// Apply project-level environment variables if in project context (2nd priority)
+	if projectName != "" {
+		if project, exists := cfg.Projects[projectName]; exists && project.Env != nil {
+			for key, value := range project.Env {
+				envMap[key] = value
+			}
+		}
+	}
+
+	// Apply command-level environment variables (highest priority)
+	if command, exists := cfg.Commands[commandName]; exists && command.Env != nil {
+		for key, value := range command.Env {
+			envMap[key] = value
+		}
+	}
+
+	// Convert map back to slice format expected by exec.Cmd
+	env := make([]string, 0, len(envMap))
+	for key, value := range envMap {
+		env = append(env, fmt.Sprintf("%s=%s", key, value))
+	}
+
+	return env
 }

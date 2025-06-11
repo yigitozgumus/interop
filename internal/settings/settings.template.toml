@@ -13,6 +13,9 @@
 # ]
 # mcp_port = 8081               # Default port for the main MCP server
 
+# Global environment variables (lowest priority, applied to all commands)
+# env = { LOG_LEVEL = "info", NODE_ENV = "development" }
+
 # =====================
 # MCP SERVER CONFIGURATION
 # =====================
@@ -109,12 +112,29 @@
 # Global commands can be run in any project directory by providing the project_path parameter.
 
 # =====================
+# ENVIRONMENT VARIABLE PRECEDENCE
+# =====================
+# Environment variables are merged with the following precedence (highest to lowest):
+# 1. Command-level env (highest priority)
+# 2. Project-level env (if executed in a project context) 
+# 3. Global-level env
+# 4. Shell's existing environment variables (lowest priority)
+#
+# Example: If you run "interop run test-api" in the my-api project:
+# - LOG_LEVEL from command "test-api" overrides all others
+# - DATABASE_URL from project "my-api" overrides global and shell
+# - Global env variables override shell environment
+# - Shell environment variables are the base
+
+# =====================
 # PROJECT DEFINITIONS
 # =====================
 
 #[projects.sample_project]
 #path = "~/projects/sample"     # Path to the project directory (must be inside $HOME)
 #description = "Sample project for demonstration"
+# Project-specific environment variables (2nd priority, applied when running commands in this project)
+#env = { DATABASE_URL = "postgres://user:pass@localhost:5432/mydb", PORT = "3000" }
 #commands = [                   # List of commands for this project (with optional aliases)
 #  { command_name = "build", alias = "b" },
 #  { command_name = "test" }
@@ -130,6 +150,8 @@
 #is_enabled = true              # Enable or disable this command
 #is_executable = false          # If true, run as an executable; if false, run in shell
 #mcp = "example"                # (Optional) Assign this command to a specific MCP server
+# Command-specific environment variables (highest priority, override all others)
+#env = { LOG_LEVEL = "debug", CGO_ENABLED = "0" }
 #arguments = [                  # (Optional) List of arguments for this command
 #  { name = "output_file", type = "string", description = "Output file name", required = true },
 #  { name = "package", type = "string", description = "Package to build", default = "./cmd/app" }
@@ -140,6 +162,8 @@
 #description = "Run tests"
 #is_enabled = true
 #is_executable = false
+# Example: Set test-specific environment variables
+#env = { GO_ENV = "test", LOG_LEVEL = "debug" }
 
 #[commands.deploy]
 #cmd = "deploy.sh"
@@ -147,6 +171,8 @@
 #is_enabled = true
 #is_executable = true
 #mcp = "example"
+# Example: Set deployment environment variables
+#env = { DEPLOY_ENV = "production", LOG_LEVEL = "error" }
 
 # =====================
 # COMMAND ARGUMENT TYPES
@@ -157,6 +183,35 @@
 #   { name = "type", type = "string", description = "Component type", required = true },
 #   { name = "force", type = "bool", description = "Overwrite if exists", default = false }
 # ]
+
+# =====================
+# COMPLETE ENVIRONMENT VARIABLE EXAMPLE
+# =====================
+# This example demonstrates environment variable injection at all levels:
+
+# Global environment variables - applied to all commands
+# env = { LOG_LEVEL = "info", NODE_ENV = "development" }
+
+# [projects.my-api]
+# path = "~/dev/my-api"
+# description = "My API project"
+# # Project-specific environment variables
+# env = { DATABASE_URL = "postgres://user:pass@localhost:5432/mydb", API_PORT = "8080" }
+# commands = [{ command_name = "test-api" }]
+
+# [commands.test-api]
+# cmd = "go test ./..."
+# description = "Run API tests"
+# # Command-specific environment variables (highest priority)
+# env = { LOG_LEVEL = "debug", GIN_MODE = "test" }
+
+# When running "interop run test-api" in the my-api project context, the final environment would be:
+# - GIN_MODE=test (from command)
+# - LOG_LEVEL=debug (from command, overriding global "info")
+# - DATABASE_URL=postgres://user:pass@localhost:5432/mydb (from project)
+# - API_PORT=8080 (from project)
+# - NODE_ENV=development (from global)
+# - Plus all existing shell environment variables (lowest priority)
 
 # =====================
 # END OF TEMPLATE
