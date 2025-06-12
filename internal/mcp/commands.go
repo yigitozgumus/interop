@@ -22,7 +22,13 @@ func StartServer(serverName string, all bool) error {
 		}
 
 		// In stdio mode, we run the server directly, not as a daemon
-		logging.Message("Starting MCP server in stdio mode...")
+		if serverName != "" {
+			logging.Message("Starting MCP server '%s' in stdio mode...", serverName)
+			// Set the server name in environment so NewMCPLibServer can pick it up
+			os.Setenv("MCP_SERVER_NAME", serverName)
+		} else {
+			logging.Message("Starting default MCP server in stdio mode...")
+		}
 		logging.Message("Note: In stdio mode, the server communicates via stdin/stdout, not HTTP")
 
 		// Create and start the server directly

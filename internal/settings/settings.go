@@ -718,9 +718,17 @@ func ValidateMCPConfig(cfg *Settings) error {
 	return nil
 }
 
-// loadConfigFromDirectory loads configuration definitions from TOML files in a directory
-// Currently only loads commands, but could be extended to load projects, prompts, etc.
-func loadConfigFromDirectory(dirPath string) (map[string]CommandConfig, error) {
+// ConfigFromDirectory represents all configuration sections that can be loaded from external files
+type ConfigFromDirectory struct {
+	Commands   map[string]CommandConfig `toml:"commands"`
+	Projects   map[string]Project       `toml:"projects"`
+	Prompts    map[string]PromptConfig  `toml:"prompts"`
+	MCPServers map[string]MCPServer     `toml:"mcp_servers"`
+}
+
+// loadConfigFromDirectory loads all configuration definitions from TOML files in a directory
+// Supports loading commands, projects, prompts, and MCP servers
+func loadConfigFromDirectory(dirPath string) (*ConfigFromDirectory, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user home directory: %w", err)
@@ -735,11 +743,21 @@ func loadConfigFromDirectory(dirPath string) (map[string]CommandConfig, error) {
 
 	// Check if directory exists
 	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
-		logging.Warning("Command directory does not exist: %s", dirPath)
-		return map[string]CommandConfig{}, nil
+		logging.Warning("Config directory does not exist: %s", dirPath)
+		return &ConfigFromDirectory{
+			Commands:   make(map[string]CommandConfig),
+			Projects:   make(map[string]Project),
+			Prompts:    make(map[string]PromptConfig),
+			MCPServers: make(map[string]MCPServer),
+		}, nil
 	}
 
-	commands := make(map[string]CommandConfig)
+	result := &ConfigFromDirectory{
+		Commands:   make(map[string]CommandConfig),
+		Projects:   make(map[string]Project),
+		Prompts:    make(map[string]PromptConfig),
+		MCPServers: make(map[string]MCPServer),
+	}
 
 	// Read all .toml files in the directory
 	files, err := filepath.Glob(filepath.Join(dirPath, "*.toml"))
@@ -751,55 +769,130 @@ func loadConfigFromDirectory(dirPath string) (map[string]CommandConfig, error) {
 	sort.Strings(files)
 
 	for _, file := range files {
-		var fileCommands struct {
-			Commands map[string]CommandConfig `toml:"commands"`
-		}
+		var fileConfig ConfigFromDirectory
 
-		if _, err := toml.DecodeFile(file, &fileCommands); err != nil {
-			logging.Warning("Failed to parse command file %s: %v", file, err)
+		if _, err := toml.DecodeFile(file, &fileConfig); err != nil {
+			logging.Warning("Failed to parse config file %s: %v", file, err)
 			continue
 		}
 
 		// Merge commands from this file
-		for name, cmd := range fileCommands.Commands {
-			if _, exists := commands[name]; exists {
+		for name, cmd := range fileConfig.Commands {
+			if _, exists := result.Commands[name]; exists {
 				logging.Warning("Duplicate command '%s' found in %s, keeping first occurrence", name, file)
 				continue
 			}
-			commands[name] = cmd
+			result.Commands[name] = cmd
 			logging.Message("Loaded command '%s' from %s", name, file)
+		}
+
+		// Merge projects from this file
+		for name, project := range fileConfig.Projects {
+			if _, exists := result.Projects[name]; exists {
+				logging.Warning("Duplicate project '%s' found in %s, keeping first occurrence", name, file)
+				continue
+			}
+			result.Projects[name] = project
+			logging.Message("Loaded project '%s' from %s", name, file)
+		}
+
+		// Merge prompts from this file
+		for name, prompt := range fileConfig.Prompts {
+			if _, exists := result.Prompts[name]; exists {
+				logging.Warning("Duplicate prompt '%s' found in %s, keeping first occurrence", name, file)
+				continue
+			}
+			result.Prompts[name] = prompt
+			logging.Message("Loaded prompt '%s' from %s", name, file)
+		}
+
+		// Merge MCP servers from this file
+		for name, server := range fileConfig.MCPServers {
+			if _, exists := result.MCPServers[name]; exists {
+				logging.Warning("Duplicate MCP server '%s' found in %s, keeping first occurrence", name, file)
+				continue
+			}
+			result.MCPServers[name] = server
+			logging.Message("Loaded MCP server '%s' from %s", name, file)
 		}
 	}
 
-	return commands, nil
+	return result, nil
 }
 
-// mergeCommands merges commands from multiple sources with precedence rules
+// mergeConfig merges all configuration types from multiple sources with precedence rules
 // Priority order: main settings.toml > command_dirs (in order) > within dir (alphabetical)
-func mergeCommands(mainCommands map[string]CommandConfig, commandDirs []string) (map[string]CommandConfig, []string) {
-	result := make(map[string]CommandConfig)
-	var conflicts []string
-
-	// Start with main commands (highest priority)
-	for name, cmd := range mainCommands {
-		result[name] = cmd
+func mergeConfig(mainSettings *Settings, commandDirs []string) (*Settings, []string) {
+	result := &Settings{
+		LogLevel:              mainSettings.LogLevel,
+		Env:                   mainSettings.Env,
+		Projects:              make(map[string]Project),
+		Commands:              make(map[string]CommandConfig),
+		Prompts:               make(map[string]PromptConfig),
+		ExecutableSearchPaths: mainSettings.ExecutableSearchPaths,
+		CommandDirs:           mainSettings.CommandDirs,
+		MCPPort:               mainSettings.MCPPort,
+		MCPServers:            make(map[string]MCPServer),
 	}
 
-	// Load commands from each directory in order
+	var conflicts []string
+
+	// Start with main settings (highest priority)
+	for name, cmd := range mainSettings.Commands {
+		result.Commands[name] = cmd
+	}
+	for name, project := range mainSettings.Projects {
+		result.Projects[name] = project
+	}
+	for name, prompt := range mainSettings.Prompts {
+		result.Prompts[name] = prompt
+	}
+	for name, server := range mainSettings.MCPServers {
+		result.MCPServers[name] = server
+	}
+
+	// Load configuration from each directory in order
 	for _, dir := range commandDirs {
-		dirCommands, err := loadConfigFromDirectory(dir)
+		dirConfig, err := loadConfigFromDirectory(dir)
 		if err != nil {
-			logging.Warning("Failed to load commands from directory %s: %v", dir, err)
+			logging.Warning("Failed to load config from directory %s: %v", dir, err)
 			continue
 		}
 
-		// Merge directory commands
-		for name, cmd := range dirCommands {
-			if _, exists := result[name]; exists {
+		// Merge commands
+		for name, cmd := range dirConfig.Commands {
+			if _, exists := result.Commands[name]; exists {
 				conflicts = append(conflicts, fmt.Sprintf("Command '%s' conflicts between main settings and %s", name, dir))
 				continue // Keep existing (higher priority)
 			}
-			result[name] = cmd
+			result.Commands[name] = cmd
+		}
+
+		// Merge projects
+		for name, project := range dirConfig.Projects {
+			if _, exists := result.Projects[name]; exists {
+				conflicts = append(conflicts, fmt.Sprintf("Project '%s' conflicts between main settings and %s", name, dir))
+				continue // Keep existing (higher priority)
+			}
+			result.Projects[name] = project
+		}
+
+		// Merge prompts
+		for name, prompt := range dirConfig.Prompts {
+			if _, exists := result.Prompts[name]; exists {
+				conflicts = append(conflicts, fmt.Sprintf("Prompt '%s' conflicts between main settings and %s", name, dir))
+				continue // Keep existing (higher priority)
+			}
+			result.Prompts[name] = prompt
+		}
+
+		// Merge MCP servers
+		for name, server := range dirConfig.MCPServers {
+			if _, exists := result.MCPServers[name]; exists {
+				conflicts = append(conflicts, fmt.Sprintf("MCP server '%s' conflicts between main settings and %s", name, dir))
+				continue // Keep existing (higher priority)
+			}
+			result.MCPServers[name] = server
 		}
 	}
 
@@ -887,10 +980,15 @@ func Load() (*Settings, error) {
 			}
 		}
 
-		// Load commands from command directories
+		// Load configuration from command directories
 		if len(commandDirs) > 0 {
-			mergedCommands, conflicts := mergeCommands(c.Commands, commandDirs)
-			c.Commands = mergedCommands
+			mergedConfig, conflicts := mergeConfig(&c, commandDirs)
+
+			// Replace all configuration sections with merged ones
+			c.Commands = mergedConfig.Commands
+			c.Projects = mergedConfig.Projects
+			c.Prompts = mergedConfig.Prompts
+			c.MCPServers = mergedConfig.MCPServers
 
 			// Log conflicts for visibility
 			for _, conflict := range conflicts {
@@ -898,10 +996,10 @@ func Load() (*Settings, error) {
 			}
 
 			if len(conflicts) > 0 {
-				logging.Message("Found %d command name conflicts. Main settings.toml takes precedence.", len(conflicts))
+				logging.Message("Found %d configuration conflicts. Main settings.toml takes precedence.", len(conflicts))
 			}
 
-			logging.Message("Loaded commands from %d directories", len(commandDirs))
+			logging.Message("Loaded configuration from %d directories", len(commandDirs))
 		}
 
 		// Validate MCP configuration
