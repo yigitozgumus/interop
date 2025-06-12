@@ -650,3 +650,55 @@ func (m *Manager) isDirEmpty(dirPath string) (bool, error) {
 	}
 	return len(entries) == 0, nil
 }
+
+// Clear removes all remote configuration files and resets tracking information
+func (m *Manager) Clear() error {
+	// Get remote configuration directories
+	remoteConfigsDir, remoteExecutablesDir, err := m.getRemoteConfigDirs()
+	if err != nil {
+		return err
+	}
+
+	// Get versions file path
+	versionsPath, err := m.getVersionsPath()
+	if err != nil {
+		return err
+	}
+
+	removedItems := 0
+
+	// Remove config.d.remote directory
+	if _, err := os.Stat(remoteConfigsDir); err == nil {
+		if err := os.RemoveAll(remoteConfigsDir); err != nil {
+			return fmt.Errorf("failed to remove remote config directory: %w", err)
+		}
+		logging.Message("Removed remote config directory: %s", remoteConfigsDir)
+		removedItems++
+	}
+
+	// Remove executables.remote directory
+	if _, err := os.Stat(remoteExecutablesDir); err == nil {
+		if err := os.RemoveAll(remoteExecutablesDir); err != nil {
+			return fmt.Errorf("failed to remove remote executables directory: %w", err)
+		}
+		logging.Message("Removed remote executables directory: %s", remoteExecutablesDir)
+		removedItems++
+	}
+
+	// Remove versions.toml file
+	if _, err := os.Stat(versionsPath); err == nil {
+		if err := os.Remove(versionsPath); err != nil {
+			return fmt.Errorf("failed to remove versions file: %w", err)
+		}
+		logging.Message("Removed versions tracking file: %s", versionsPath)
+		removedItems++
+	}
+
+	if removedItems == 0 {
+		logging.Message("No remote files to clear")
+	} else {
+		logging.Message("Successfully cleared %d remote items", removedItems)
+	}
+
+	return nil
+}

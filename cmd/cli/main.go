@@ -212,6 +212,22 @@ func main() {
 	}
 	remoteCmd.AddCommand(remoteFetchCmd)
 
+	// Remote clear command
+	remoteClearCmd := &cobra.Command{
+		Use:   "clear",
+		Short: "Clear all remote configuration files and reset tracking",
+		Long:  "Remove all files from config.d.remote and executables.remote directories and reset the version tracking information. This provides a clean slate for remote configuration.",
+		Run: func(cmd *cobra.Command, args []string) {
+			remoteMgr := remote.NewManager()
+			if err := remoteMgr.Clear(); err != nil {
+				logging.ErrorAndExit("Failed to clear remote configuration: %v", err)
+			}
+
+			fmt.Println("Successfully cleared all remote configuration files and tracking information")
+		},
+	}
+	remoteCmd.AddCommand(remoteClearCmd)
+
 	// Add remote command to config command
 	configCmd.AddCommand(remoteCmd)
 
