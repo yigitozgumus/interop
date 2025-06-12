@@ -46,7 +46,13 @@ func main() {
 		Use:   "projects",
 		Short: "List all configured projects with their commands",
 		Run: func(cmd *cobra.Command, args []string) {
-			projectPkg.ListWithCommands(cfg)
+			// Reload configuration fresh to ensure remote configs are included
+			freshCfg, err := settings.Load()
+			if err != nil {
+				logging.ErrorAndExit("Failed to reload configuration: %v", err)
+			}
+
+			projectPkg.ListWithCommands(freshCfg)
 		},
 	}
 	rootCmd.AddCommand(projectsCmd)
@@ -56,9 +62,15 @@ func main() {
 		Use:   "commands",
 		Short: "List all configured commands",
 		Run: func(cmd *cobra.Command, args []string) {
-			// Convert cfg.Commands to the expected format for command.ListWithProjects
+			// Reload configuration fresh to ensure remote configs are included
+			freshCfg, err := settings.Load()
+			if err != nil {
+				logging.ErrorAndExit("Failed to reload configuration: %v", err)
+			}
+
+			// Convert freshCfg.Commands to the expected format for command.ListWithProjects
 			commands := make(map[string]command.Command)
-			for name, cmdCfg := range cfg.Commands {
+			for name, cmdCfg := range freshCfg.Commands {
 				commands[name] = command.Command{
 					Description:  cmdCfg.Description,
 					IsEnabled:    cmdCfg.IsEnabled,
@@ -69,7 +81,7 @@ func main() {
 
 			// Convert project commands to the format expected by ListWithProjects
 			projectCommands := make(map[string][]command.Alias)
-			for projectName, project := range cfg.Projects {
+			for projectName, project := range freshCfg.Projects {
 				aliases := make([]command.Alias, len(project.Commands))
 				for i, a := range project.Commands {
 					aliases[i] = command.Alias{
@@ -562,14 +574,20 @@ Examples:
 		Use:   "validate",
 		Short: "Validate the configuration file",
 		Run: func(cmd *cobra.Command, args []string) {
+			// Reload configuration fresh to ensure remote configs are included
+			freshCfg, err := settings.Load()
+			if err != nil {
+				logging.ErrorAndExit("Failed to reload configuration: %v", err)
+			}
+
 			// Show command graph visualization first
-			display.PrintCommandGraph(cfg)
+			display.PrintCommandGraph(freshCfg)
 
 			// Validate commands using existing functionality
-			cmdErrors := validation.ValidateCommands(cfg)
+			cmdErrors := validation.ValidateCommands(freshCfg)
 
 			// Validate projects using the new project validator
-			projectValidator := project.NewValidator(cfg)
+			projectValidator := project.NewValidator(freshCfg)
 			projectResult := projectValidator.ValidateAll()
 
 			// Combine errors from both validations
