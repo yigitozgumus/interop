@@ -144,7 +144,24 @@ func main() {
 	mcpStartCmd := &cobra.Command{
 		Use:   "start [server-name]",
 		Short: "Start an MCP server or all servers",
-		Long:  "Start all MCP servers by default, or a specific named server if provided",
+		Long: `Start MCP servers in either SSE (HTTP) or stdio mode:
+
+SSE Mode (default):
+  - Runs as a daemon process in the background  
+  - Communicates via HTTP on configured ports
+  - Supports multiple named servers
+  - Use --all flag to start all configured servers
+
+Stdio Mode:
+  - Runs in foreground and communicates via stdin/stdout
+  - Used by MCP clients that spawn the server process directly
+  - Does not support --all flag (single server only)
+  - No HTTP ports are used
+  
+Examples:
+  interop mcp start                    # Start all servers in SSE mode
+  interop mcp start --mode stdio       # Start default server in stdio mode
+  interop mcp start myserver --mode sse # Start named server in SSE mode`,
 		Run: func(cmd *cobra.Command, args []string) {
 			// Check for stdio mode first
 			if serverMode == "stdio" && startAllServers {

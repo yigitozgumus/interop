@@ -18,6 +18,28 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
+// ToolOutput represents the JSON structure for tool outputs
+type ToolOutput struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+// formatToolOutput wraps the output text in the required JSON format
+func formatToolOutput(output string) string {
+	toolOutput := ToolOutput{
+		Type: "text",
+		Text: output,
+	}
+
+	jsonOutput, err := json.Marshal(toolOutput)
+	if err != nil {
+		// Fallback to simple format if JSON marshaling fails
+		return fmt.Sprintf(`{"type": "text", "text": %q}`, output)
+	}
+
+	return string(jsonOutput)
+}
+
 // MCPLibServer represents the MCP server implementation using mark3labs/mcp-go
 type MCPLibServer struct {
 	mcpServer      *server.MCPServer
@@ -111,15 +133,20 @@ func NewMCPLibServer() (*MCPLibServer, error) {
 		return nil, fmt.Errorf("failed to create log file: %w", err)
 	}
 
-	// Redirect standard output to log file for MCP server logging
-	// This is necessary because the MCP server logs to stdout
+	// Only redirect stdout to log file in SSE mode, not in stdio mode
 	// Save the original stdout for later restoration if needed
 	originalStdout := os.Stdout
-	os.Stdout = logFile
+	if serverMode != "stdio" {
+		// Redirect standard output to log file for MCP server logging
+		// This is necessary because the MCP server logs to stdout
+		os.Stdout = logFile
+	}
 
 	// Make sure we restore stdout and close log file if there's an error
 	cleanup := func() {
-		os.Stdout = originalStdout
+		if serverMode != "stdio" {
+			os.Stdout = originalStdout
+		}
 		logFile.Close()
 	}
 
@@ -172,9 +199,9 @@ func NewMCPLibServer() (*MCPLibServer, error) {
 
 	// Write initial log message to file only, not stdout
 	if serverName != "" {
-		s.logInfo("MCP server '%s' initialized on port %d", serverName, port)
+		s.logInfo("MCP server '%s' initialized on port %d in %s mode", serverName, port, serverMode)
 	} else {
-		s.logInfo("Default MCP server initialized on port %d", port)
+		s.logInfo("Default MCP server initialized on port %d in %s mode", port, serverMode)
 	}
 
 	return s, nil
@@ -298,7 +325,7 @@ func (s *MCPLibServer) registerCommandTools(serverName string) {
 
 		// Format the output as JSON text
 		cmdJSON, _ := json.MarshalIndent(commands, "", "  ")
-		return mcp.NewToolResultText(sanitizeOutput(string(cmdJSON))), nil
+		return mcp.NewToolResultText(formatToolOutput(sanitizeOutput(string(cmdJSON)))), nil
 	})
 
 	s.logInfo("Registered MCP commands tool")
@@ -582,8 +609,8 @@ func (s *MCPLibServer) registerSingleCommandTool(name string, cmdConfig settings
 			return mcp.NewToolResultError(fmt.Sprintf("Command execution failed: %v", err)), nil
 		}
 
-		// Return the sanitized result
-		return mcp.NewToolResultText(sanitizeOutput(result)), nil
+		// Return the sanitized result in JSON format
+		return mcp.NewToolResultText(formatToolOutput(sanitizeOutput(result))), nil
 	})
 
 	s.logInfo("Registered MCP tool for command: %s", name)
@@ -819,8 +846,6 @@ func (s *MCPLibServer) executeCommandWithPath(name, cmdStr string, args map[stri
 	return sanitizeOutput(string(output)), nil
 }
 
-
-
 // Start starts the MCP server in either stdio or SSE mode
 func (s *MCPLibServer) Start() error {
 	s.logInfo("Starting MCP server in %s mode", s.serverMode)
@@ -847,8 +872,10 @@ func (s *MCPLibServer) Start() error {
 func (s *MCPLibServer) Stop() error {
 	s.logInfo("Stopping MCP server")
 
-	// Restore stdout before closing the log file
-	os.Stdout = os.Stderr
+	// Restore stdout before closing the log file (only if we redirected it)
+	if s.serverMode != "stdio" {
+		os.Stdout = os.Stderr
+	}
 
 	// Close log file
 	if s.logFile != nil {

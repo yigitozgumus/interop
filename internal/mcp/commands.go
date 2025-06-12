@@ -21,12 +21,17 @@ func StartServer(serverName string, all bool) error {
 			return fmt.Errorf("--all flag is not supported in stdio mode")
 		}
 
+		// In stdio mode, we run the server directly, not as a daemon
+		logging.Message("Starting MCP server in stdio mode...")
+		logging.Message("Note: In stdio mode, the server communicates via stdin/stdout, not HTTP")
+
 		// Create and start the server directly
 		mcpLibServer, err := NewMCPLibServer()
 		if err != nil {
 			return fmt.Errorf("failed to create MCP server: %w", err)
 		}
 
+		// This will block until the server stops
 		return mcpLibServer.Start()
 	}
 
