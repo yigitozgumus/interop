@@ -324,7 +324,7 @@ type PathConfig struct {
 	AppDir         string
 	CfgFile        string
 	ExecutablesDir string
-	CommandsDir    string
+	ConfigDir      string
 }
 
 // DefaultPathConfig contains the default paths configuration
@@ -333,7 +333,7 @@ var DefaultPathConfig = PathConfig{
 	AppDir:         "interop",
 	CfgFile:        "settings.toml",
 	ExecutablesDir: "executables",
-	CommandsDir:    "commands.d",
+	ConfigDir:      "config.d",
 }
 
 var (
@@ -368,9 +368,9 @@ var defaultSettingsTemplate = `# Interop Settings Template
 #   "~/.local/bin",
 #   "~/bin"
 # ]
-# command_dirs = [              # Directories to load additional command definitions from
-#   "~/.config/interop/commands.d"  # Default: if not specified, this directory is automatically used
-#   "~/projects/shared/interop-commands"
+# command_dirs = [              # Directories to load additional configuration definitions from
+#   "~/.config/interop/config.d"  # Default: if not specified, this directory is automatically used
+#   "~/projects/shared/interop-configs"
 # ]
 # mcp_port = 8081               # Default port for the main MCP server
 
@@ -485,8 +485,9 @@ var defaultSettingsTemplate = `# Interop Settings Template
 # COMMAND DEFINITIONS
 # =====================
 # Commands can be defined in the main settings.toml file or in separate files
-# in directories specified by command_dirs. Commands from main settings.toml
-# take precedence over those in external directories.
+# in directories specified by command_dirs. Configuration files in these directories
+# can contain [commands], [projects], [prompts], and other configuration sections.
+# Commands from main settings.toml take precedence over those in external directories.
 
 #[commands.build]
 #cmd = "go build ./..."         # The shell command or executable to run
@@ -583,12 +584,12 @@ func validate() (string, error) {
 		logging.Message("executables directory is created")
 	}
 
-	// Create commands.d directory for command definitions
-	commandsDir := filepath.Join(base, pathConfig.CommandsDir)
-	if e := os.MkdirAll(commandsDir, 0o755); e != nil {
-		logging.Error("Can't create the directory for commands: " + e.Error())
+	// Create config.d directory for configuration definitions
+	configDir := filepath.Join(base, pathConfig.ConfigDir)
+	if e := os.MkdirAll(configDir, 0o755); e != nil {
+		logging.Error("Can't create the directory for config: " + e.Error())
 	} else {
-		logging.Message("commands.d directory is created")
+		logging.Message("config.d directory is created")
 	}
 
 	if _, e := os.Stat(path); errors.Is(e, os.ErrNotExist) {
@@ -717,8 +718,9 @@ func ValidateMCPConfig(cfg *Settings) error {
 	return nil
 }
 
-// loadCommandsFromDirectory loads command definitions from TOML files in a directory
-func loadCommandsFromDirectory(dirPath string) (map[string]CommandConfig, error) {
+// loadConfigFromDirectory loads configuration definitions from TOML files in a directory
+// Currently only loads commands, but could be extended to load projects, prompts, etc.
+func loadConfigFromDirectory(dirPath string) (map[string]CommandConfig, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user home directory: %w", err)
@@ -785,7 +787,7 @@ func mergeCommands(mainCommands map[string]CommandConfig, commandDirs []string) 
 
 	// Load commands from each directory in order
 	for _, dir := range commandDirs {
-		dirCommands, err := loadCommandsFromDirectory(dir)
+		dirCommands, err := loadConfigFromDirectory(dir)
 		if err != nil {
 			logging.Warning("Failed to load commands from directory %s: %v", dir, err)
 			continue
@@ -870,12 +872,12 @@ func Load() (*Settings, error) {
 
 		// If no command_dirs are explicitly configured, add the default commands.d directory
 		if len(commandDirs) == 0 {
-			defaultCommandsPath, err := GetCommandsPath()
+			defaultCommandsPath, err := GetConfigPath()
 			if err == nil {
 				// Only add if the directory exists to avoid warnings
 				if _, err := os.Stat(defaultCommandsPath); err == nil {
 					commandDirs = []string{defaultCommandsPath}
-					logging.Message("Using default commands directory: %s", defaultCommandsPath)
+					logging.Message("Using default config directory: %s", defaultCommandsPath)
 				}
 			}
 		}
@@ -1096,8 +1098,8 @@ func MergeEnvironmentVariables(cfg *Settings, commandName string, projectName st
 	return env
 }
 
-// GetCommandsPath returns the path to the default commands directory
-func GetCommandsPath() (string, error) {
+// GetConfigPath returns the path to the default config directory
+func GetConfigPath() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("failed to get user home directory: %w", err)
@@ -1107,6 +1109,6 @@ func GetCommandsPath() (string, error) {
 		homeDir,
 		DefaultPathConfig.SettingsDir,
 		DefaultPathConfig.AppDir,
-		DefaultPathConfig.CommandsDir,
+		DefaultPathConfig.ConfigDir,
 	), nil
 }

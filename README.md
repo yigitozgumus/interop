@@ -171,33 +171,34 @@ Each project includes:
 - **Description**: Optional project description
 - **Commands**: List of commands with optional aliases
 
-## Dynamic Command Loading
+## Dynamic Configuration Loading
 
-Interop supports loading command definitions from multiple directories, enabling better organization and scalability for large command collections.
+Interop supports loading configuration definitions from multiple directories, enabling better organization and scalability for large configuration collections.
 
 ### Configuration
 
-Add `command_dirs` to your global settings to specify directories containing command definition files:
+Add `command_dirs` to your global settings to specify directories containing configuration definition files:
 
 ```toml
 command_dirs = [
-  "~/.config/interop/commands.d",
-  "~/projects/shared/interop-commands"
+  "~/.config/interop/config.d",
+  "~/projects/shared/interop-configs"
 ]
 ```
 
-### Command Directory Structure
+### Configuration Directory Structure
 
-Each directory can contain multiple `*.toml` files with command definitions:
+Each directory can contain multiple `*.toml` files with configuration definitions:
 
 ```
-~/.config/interop/commands.d/
-├── git.toml
-├── docker.toml
-└── kubernetes.toml
+~/.config/interop/config.d/
+├── git-commands.toml
+├── docker-commands.toml
+├── dev-projects.toml
+└── ai-prompts.toml
 ```
 
-Example `git.toml`:
+Example `git-commands.toml`:
 
 ```toml
 [commands.git-status]
@@ -215,22 +216,41 @@ is_enabled = true
 mcp = "dev-tools"
 ```
 
+Example `dev-projects.toml`:
+
+```toml
+[projects.my-api]
+path = "~/projects/my-api"
+description = "Main API project"
+commands = [
+  { command_name = "build", alias = "b" },
+  { command_name = "test", alias = "t" }
+]
+```
+
+### What Can Be Included
+
+Configuration files in these directories can contain:
+- **Commands** (`[commands.name]`) - Command definitions
+- **Projects** (`[projects.name]`) - Project configurations  
+- **Prompts** (`[prompts.name]`) - AI prompt templates
+- **MCP Servers** (`[mcp_servers.name]`) - MCP server definitions
+
 ### Precedence Rules
 
-When command names conflict, Interop follows a clear precedence order:
+When configuration names conflict, Interop follows a clear precedence order:
 
 1. **Main `settings.toml`** (highest priority)
-2. **Command directories** in the order specified in `command_dirs`
+2. **Configuration directories** in the order specified in `command_dirs`
 3. **Files within directories** in alphabetical order
 
-This ensures predictable command resolution and allows for easy overriding of shared commands.
+This ensures predictable configuration resolution and allows for easy overriding of shared configurations.
 
 ### Benefits
 
-- **Organization**: Group related commands in separate files
-- **Sharing**: Share command collections across teams or projects
-- **Modularity**: Enable/disable entire command sets by directory
-- **Scalability**: Manage hundreds of commands without cluttering main config
+- **Organization**: Group related configurations in separate files
+- **Sharing**: Share configuration collections across teams or projects
+- **Modularity**: Enable/disable entire configuration sets by directory
 
 ## Command Management
 
