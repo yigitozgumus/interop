@@ -16,6 +16,7 @@ Interop serves as a bridge between your development projects, custom commands, a
 - **Project Management**: Track and validate multiple project directories
 - **Command Execution**: Run commands with project context and arguments
 - **Dynamic Command Loading**: Load commands from multiple directories with precedence rules
+- **Remote Configuration System**: Fetch and sync configurations from Git repositories with conflict resolution
 - **AI Integration**: Multiple MCP servers to expose commands to AI assistants with enhanced metadata
 - **Configuration Management**: TOML-based configuration with validation and conflict detection
 - **Cross-Platform Support**: Works on Linux, macOS, and Windows
@@ -251,6 +252,330 @@ This ensures predictable configuration resolution and allows for easy overriding
 - **Organization**: Group related configurations in separate files
 - **Sharing**: Share configuration collections across teams or projects
 - **Modularity**: Enable/disable entire configuration sets by directory
+
+## Remote Configuration System
+
+Interop includes a powerful remote configuration system that allows you to fetch and manage configurations from Git repositories. This enables teams to share command definitions, maintain centralized configuration libraries, and keep local setups synchronized with remote sources.
+
+### Overview
+
+The remote configuration system:
+- Fetches configurations from Git repositories
+- Maintains local copies in `config.d.remote` and `executables.remote` directories
+- Tracks file changes with SHA-256 hashing for incremental updates
+- Automatically integrates remote configurations with local ones
+- Provides conflict detection and resolution with local configurations taking precedence
+
+### Managing Remote Configurations
+
+#### Adding a Remote Repository
+
+```bash
+# Add a remote Git repository
+interop config remote add my-team https://github.com/myteam/interop-configs.git
+
+# Add with SSH (recommended for private repositories)
+interop config remote add my-team git@github.com:myteam/interop-configs.git
+```
+
+#### Listing Remote Repositories
+
+```bash
+interop config remote show
+```
+
+Output example:
+```
+Remote Configurations:
+======================
+
+🔗 my-team
+   URL: git@github.com:myteam/interop-configs.git
+   Status: ✓ Valid Git URL
+
+🔗 shared-tools  
+   URL: https://github.com/company/shared-tools.git
+   Status: ✓ Valid Git URL
+```
+
+#### Fetching Remote Configurations
+
+```bash
+# Fetch from all configured remotes
+interop config remote fetch
+
+# Fetch from a specific remote
+interop config remote fetch my-team
+```
+
+The fetch process:
+1. **Clones** the repository to a temporary directory
+2. **Validates** the repository structure (requires `config.d` and/or `executables` folders)
+3. **Compares** file hashes to detect changes
+4. **Syncs** only modified files to local remote directories
+5. **Updates** version tracking with commit information
+6. **Cleans up** files that were removed from the remote
+
+#### Removing Remote Repositories
+
+```bash
+# Remove a specific remote
+interop config remote remove my-team
+
+# Clear all remote configurations and cached files
+interop config remote clear
+```
+
+### Repository Structure Requirements
+
+Remote repositories must follow this structure:
+
+```
+your-repo/
+├── config.d/              # Configuration files (required)
+│   ├── commands.toml      # Command definitions
+│   ├── projects.toml      # Project configurations
+│   └── mcp-servers.toml   # MCP server definitions
+└── executables/           # Executable files (optional)
+    ├── deploy.sh
+    ├── build-tool
+    └── scripts/
+        └── helper.py
+```
+
+#### Example Remote Configuration
+
+`config.d/team-commands.toml`:
+```toml
+[commands.team-deploy]
+cmd = "deploy.sh"
+description = "Deploy using team standards"
+is_executable = true
+mcp = "team-tools"
+version = "2.1.0"
+arguments = [
+  { name = "environment", type = "string", required = true, description = "Target environment" },
+  { name = "force", type = "bool", default = false, description = "Force deployment" }
+]
+
+[commands.team-test]
+cmd = "run-team-tests.sh"
+description = "Run standardized team tests"
+is_executable = true
+mcp = "team-tools"
+
+[mcp_servers.team-tools]
+name = "team-tools"
+description = "Team standardized tools"
+port = 8084
+```
+
+### Local Integration
+
+Remote configurations are automatically integrated into your local setup:
+
+#### Directory Structure
+
+```
+~/.config/interop/
+├── settings.toml           # Your local settings
+├── config.d/              # Local configurations
+│   └── personal.toml
+├── config.d.remote/       # Remote configurations (auto-managed)
+│   ├── team-commands.toml
+│   └── shared-tools.toml
+├── executables/           # Local executables
+├── executables.remote/    # Remote executables (auto-managed)
+│   ├── deploy.sh
+│   └── build-tool
+└── versions.toml          # Remote tracking metadata (auto-managed)
+```
+
+#### Precedence Rules
+
+When configurations conflict, Interop follows this precedence:
+
+1. **Local configurations** (`config.d/`) - highest priority
+2. **Remote configurations** (`config.d.remote/`) - lower priority
+3. **Main settings.toml** - fallback for global settings
+
+This ensures your local customizations always take precedence while still benefiting from shared remote configurations.
+
+### Conflict Detection and Resolution
+
+The validation system provides comprehensive conflict detection:
+
+```bash
+interop validate
+```
+
+Example output with conflicts:
+```
+Configuration Overview
+=====================
+
+Configuration Sources:
+---------------------
+🏠 Main Settings: /Users/user/.config/interop/settings.toml
+🏠 Command Directories:
+   🏠 /Users/user/.config/interop/config.d (2 files)
+☁️ Remote Configuration:
+   ✓ config.d.remote: Available (3 files)
+   ✓ executables.remote: Available (5 files)
+   ✓ Remote tracking: Active
+
+⚠️ Potential Conflicts:
+   ⚠️ Command 'deploy' exists in both local and remote configs
+   ⚠️ Command 'test-suite' exists in both local and remote configs
+   → Local configurations take precedence
+
+Commands:
+--------
+🌐 ✓ deploy (Shell) (🏠 Local)
+   └─ My custom deploy script
+   └─ 🔌 Default MCP server (Port: 8081)
+
+🌐 ✓ team-deploy (Shell) (☁️ Remote)
+   └─ Deploy using team standards
+   └─ 🔌 Assigned to MCP server: team-tools (Port: 8084)
+```
+
+### Version Tracking and Incremental Updates
+
+Interop maintains detailed tracking of remote configurations:
+
+#### Version Information
+
+The system tracks:
+- **File hashes** (SHA-256) for change detection
+- **Last commit ID** for repository state
+- **Fetch timestamps** for update history
+- **File paths** for cleanup of removed files
+
+#### Incremental Updates
+
+Subsequent fetches are optimized:
+- Only changed files are downloaded
+- Removed files are cleaned up locally
+- Commit history is preserved for rollback capability
+- Network usage is minimized
+
+### Git URL Validation
+
+The system validates Git URLs to ensure compatibility:
+
+#### Supported Formats
+
+**SSH Format:**
+```bash
+git@github.com:user/repo.git
+git@gitlab.com:user/repo.git
+git@bitbucket.org:user/repo.git
+```
+
+**HTTPS Format:**
+```bash
+https://github.com/user/repo.git
+https://gitlab.com/user/repo.git
+https://bitbucket.org/user/repo.git
+```
+
+**Custom Git Servers:**
+```bash
+https://git.company.com/team/configs.git
+git@git.company.com:team/configs.git
+```
+
+### Use Cases
+
+#### Team Standardization
+
+```bash
+# Set up team-wide configurations
+interop config remote add company-standards git@github.com:company/interop-standards.git
+interop config remote fetch
+
+# Now all team members have access to:
+# - Standardized deployment scripts
+# - Common development commands  
+# - Shared MCP server configurations
+# - Team-specific project templates
+```
+
+#### Multi-Environment Management
+
+```bash
+# Different configurations for different environments
+interop config remote add prod-tools git@github.com:company/prod-tools.git
+interop config remote add dev-tools git@github.com:company/dev-tools.git
+
+# Fetch environment-specific tools
+interop config remote fetch prod-tools
+interop config remote fetch dev-tools
+```
+
+#### Open Source Tool Collections
+
+```bash
+# Add community-maintained tool collections
+interop config remote add awesome-dev-tools https://github.com/community/awesome-dev-tools.git
+interop config remote fetch
+```
+
+### Best Practices
+
+#### Repository Organization
+
+1. **Separate concerns**: Use different repositories for different domains
+2. **Version your configurations**: Tag releases for stable configuration sets
+3. **Document commands**: Include comprehensive descriptions and examples
+4. **Test configurations**: Validate configurations before pushing
+
+#### Security Considerations
+
+1. **Use SSH keys** for private repositories
+2. **Review remote configurations** before fetching
+3. **Keep sensitive data local** - don't put secrets in remote configs
+4. **Audit remote sources** regularly
+
+#### Team Workflow
+
+1. **Centralize common tools** in team repositories
+2. **Allow local overrides** for personal preferences
+3. **Version control changes** to shared configurations
+4. **Communicate updates** when shared configs change
+
+### Troubleshooting
+
+#### Common Issues
+
+**Repository not found:**
+```bash
+# Check URL and access permissions
+git clone <your-repo-url>  # Test manually
+```
+
+**Invalid repository structure:**
+```bash
+# Ensure repository has config.d/ or executables/ directory
+# Check repository contents match expected structure
+```
+
+**Conflicts with local configurations:**
+```bash
+# Use validation to identify conflicts
+interop validate
+
+# Rename local commands if needed
+# Or remove remote repository if not needed
+```
+
+**Network issues:**
+```bash
+# Check internet connectivity
+# Verify Git credentials are set up
+# Try fetching manually: git clone <repo-url>
+```
 
 ## Command Management
 
@@ -532,20 +857,85 @@ When commands include version and examples:
 
 ## Validation & Diagnostics
 
-### Validate Configuration
+### Enhanced Configuration Validation
 
 ```bash
 interop validate
 ```
 
-This validates:
-- Project paths exist
+The validation system provides comprehensive analysis of your configuration:
+
+#### Configuration Sources Analysis
+- **Main Settings**: Validates `settings.toml` exists and is accessible
+- **Local Directories**: Shows file counts and accessibility of `config.d/`
+- **Remote Directories**: Shows status of `config.d.remote/` and `executables.remote/`
+- **Remote Tracking**: Indicates if remote version tracking is active
+
+#### Conflict Detection
+- **Command Conflicts**: Identifies commands defined in multiple sources
+- **Precedence Rules**: Shows which configuration takes precedence
+- **Visual Indicators**: Uses symbols to highlight conflicts and warnings
+- **Source Attribution**: Shows whether each command comes from local or remote sources
+
+#### Validation Checks
+- Project paths exist and are accessible
 - Command references are valid
-- No conflicting aliases
-- Required command arguments have definitions
+- No conflicting aliases within the same scope
+- Required command arguments have proper definitions
 - MCP server ports don't conflict
-- Command name conflicts between main settings and command directories
 - Command directory accessibility and TOML syntax
+- Remote repository structure compliance
+- Git URL format validation
+
+#### Example Validation Output
+
+```
+Configuration Overview
+=====================
+
+Configuration Sources:
+---------------------
+🏠 Main Settings: /Users/user/.config/interop/settings.toml
+🏠 Command Directories:
+   🏠 /Users/user/.config/interop/config.d (2 files)
+☁️ Remote Configuration:
+   ✓ config.d.remote: Available (3 files)
+   ✓ executables.remote: Available (5 files)
+   ✓ Remote tracking: Active
+
+⚠️ Potential Conflicts:
+   ⚠️ Command 'deploy' exists in both local and remote configs
+   → Local configurations take precedence
+
+MCP Servers:
+-----------
+🔌 Default MCP Server (Port: 8081)
+   └─ Commands: (commands with no MCP field)
+
+🔌 team-tools MCP Server (Port: 8084)
+   └─ Team standardized tools
+   └─ Commands: 5
+
+Commands:
+--------
+🌐 ✓ deploy (Shell) (🏠 Local)
+   └─ My custom deploy script
+   └─ 🔌 Default MCP server (Port: 8081)
+
+🌐 ✓ team-deploy (Shell) (☁️ Remote)
+   └─ Deploy using team standards
+   └─ 🔌 Assigned to MCP server: team-tools (Port: 8084)
+
+Legend:
+-------
+🌐 Global Command        🏠 Local Configuration
+📂 Project-bound Command ☁️ Remote Configuration  
+🔄 Command Alias         ⚠️ Warning/Conflict
+✓ Enabled Command        🔌 MCP Server Association
+❌ Disabled Command
+
+✅ Configuration is valid!
+```
 
 ### Port Checking
 
@@ -605,6 +995,37 @@ executable_search_paths = ["~/.local/bin", "~/bin"]
 Run the test suite:
 ```bash
 go test ./...
+```
+
+## Quick Reference
+
+### Remote Configuration Commands
+
+```bash
+# Remote repository management
+interop config remote add <name> <git-url>     # Add remote repository
+interop config remote remove <name>            # Remove remote repository
+interop config remote show                     # List all remotes
+interop config remote clear                    # Remove all remotes and cached files
+
+# Fetching configurations
+interop config remote fetch                    # Fetch from all remotes
+interop config remote fetch <name>             # Fetch from specific remote
+
+# Validation and diagnostics
+interop validate                               # Comprehensive configuration validation
+interop mcp port-check                         # Check MCP server port availability
+```
+
+### Configuration File Locations
+
+```bash
+~/.config/interop/settings.toml               # Main configuration file
+~/.config/interop/config.d/                   # Local configuration directory
+~/.config/interop/config.d.remote/            # Remote configurations (auto-managed)
+~/.config/interop/executables/                # Local executable files
+~/.config/interop/executables.remote/         # Remote executables (auto-managed)
+~/.config/interop/versions.toml               # Remote tracking metadata (auto-managed)
 ```
 
 ## License
