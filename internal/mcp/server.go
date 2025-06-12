@@ -609,24 +609,53 @@ func (m *ServerManager) ListMCPServers() string {
 
 // ExportMCPConfig returns a JSON representation of the MCP configuration
 func (m *ServerManager) ExportMCPConfig() (string, error) {
+	return m.ExportMCPConfigWithMode("sse")
+}
+
+// ExportMCPConfigWithMode returns a JSON representation of the MCP configuration for the specified mode
+func (m *ServerManager) ExportMCPConfigWithMode(mode string) (string, error) {
 	cfg, err := settings.Load()
 	if err != nil {
 		return "", fmt.Errorf("failed to load settings: %v", err)
 	}
 
-	// Create output format with the required naming convention
-	servers := make(map[string]map[string]string)
-
-	// Add default server
-	servers["default-interopMCPServer"] = map[string]string{
-		"url": fmt.Sprintf("http://localhost:%d/mcp", cfg.MCPPort),
+	// Validate mode
+	if mode != "stdio" && mode != "sse" {
+		return "", fmt.Errorf("invalid mode: %s, must be either 'stdio' or 'sse'", mode)
 	}
 
-	// Add all configured MCP servers
-	for name, mcpServer := range cfg.MCPServers {
-		serverKey := fmt.Sprintf("%s-interopMCPServer", name)
-		servers[serverKey] = map[string]string{
-			"url": fmt.Sprintf("http://localhost:%d/mcp", mcpServer.Port),
+	// Create output format with the required naming convention
+	servers := make(map[string]map[string]interface{})
+
+	if mode == "stdio" {
+		// For stdio mode, provide command-line configurations
+		// Add default server
+		servers["default-interopMCPServer"] = map[string]interface{}{
+			"command": "interop",
+			"args":    []string{"mcp", "start", "--mode", "stdio"},
+		}
+
+		// Add all configured MCP servers
+		for name, _ := range cfg.MCPServers {
+			serverKey := fmt.Sprintf("%s-interopMCPServer", name)
+			servers[serverKey] = map[string]interface{}{
+				"command": "interop",
+				"args":    []string{"mcp", "start", name, "--mode", "stdio"},
+			}
+		}
+	} else {
+		// For SSE mode, provide HTTP URLs (existing behavior)
+		// Add default server
+		servers["default-interopMCPServer"] = map[string]interface{}{
+			"url": fmt.Sprintf("http://localhost:%d/mcp", cfg.MCPPort),
+		}
+
+		// Add all configured MCP servers
+		for name, mcpServer := range cfg.MCPServers {
+			serverKey := fmt.Sprintf("%s-interopMCPServer", name)
+			servers[serverKey] = map[string]interface{}{
+				"url": fmt.Sprintf("http://localhost:%d/mcp", mcpServer.Port),
+			}
 		}
 	}
 

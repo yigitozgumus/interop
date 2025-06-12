@@ -298,14 +298,39 @@ Examples:
 	mcpExportCmd := &cobra.Command{
 		Use:   "export",
 		Short: "Export MCP server configuration as JSON",
+		Long: `Export MCP server configuration as JSON for use with MCP clients.
+
+Modes:
+  sse (default): Export HTTP URLs for SSE-based communication
+  stdio: Export command-line configurations for stdio-based communication
+  
+Examples:
+  interop mcp export                  # Export SSE configuration (HTTP URLs)
+  interop mcp export --mode sse       # Export SSE configuration (HTTP URLs)  
+  interop mcp export --mode stdio     # Export stdio configuration (command lines)`,
 		Run: func(cmd *cobra.Command, args []string) {
-			result, err := mcp.ExportMCPConfig()
+			// Get the mode flag value, default to "sse"
+			mode, _ := cmd.Flags().GetString("mode")
+			if mode == "" {
+				mode = "sse"
+			}
+
+			var result string
+			var err error
+
+			if mode == "stdio" || mode == "sse" {
+				result, err = mcp.ExportMCPConfigWithMode(mode)
+			} else {
+				logging.ErrorAndExit("Invalid mode '%s'. Must be either 'stdio' or 'sse'", mode)
+			}
+
 			if err != nil {
 				logging.ErrorAndExit("Failed to export MCP configuration: %v", err)
 			}
 			fmt.Println(result)
 		},
 	}
+	mcpExportCmd.Flags().String("mode", "sse", "Export mode (stdio or sse)")
 	mcpCmd.AddCommand(mcpExportCmd)
 
 	// MCP prompts command

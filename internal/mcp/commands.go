@@ -179,6 +179,16 @@ func ExportMCPConfig() (string, error) {
 	return manager.ExportMCPConfig()
 }
 
+// ExportMCPConfigWithMode exports the MCP configuration as JSON for the specified mode
+func ExportMCPConfigWithMode(mode string) (string, error) {
+	manager, err := NewServerManager()
+	if err != nil {
+		return "", fmt.Errorf("failed to initialize MCP server manager: %v", err)
+	}
+
+	return manager.ExportMCPConfigWithMode(mode)
+}
+
 // StreamServerEvents subscribes to and displays events from the MCP server
 func StreamServerEvents(serverName string) error {
 	// Get server info to check if it's running
