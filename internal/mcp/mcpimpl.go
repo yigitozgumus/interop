@@ -220,9 +220,9 @@ func (s *MCPLibServer) registerCommandTools(serverName string) {
 
 		// If we have a specific server name, only add commands belonging to this server
 		if serverName != "" {
-			// Only add commands assigned to this server or with no MCP field
-			if cmd.MCP != "" && cmd.MCP != serverName {
-				// Skip commands assigned to a different server
+			// Only add commands explicitly assigned to this server
+			if cmd.MCP != serverName {
+				// Skip commands not assigned to this server (including those with no MCP field)
 				continue
 			}
 		} else {
@@ -258,9 +258,9 @@ func (s *MCPLibServer) registerCommandTools(serverName string) {
 
 				// Filter by server name
 				if serverName != "" {
-					// For a named server, only include commands for this server
-					if cmd.MCP != "" && cmd.MCP != serverName {
-						// Skip commands assigned to a different server
+					// For a named server, only include commands explicitly assigned to this server
+					if cmd.MCP != serverName {
+						// Skip commands not assigned to this server (including those with no MCP field)
 						continue
 					}
 				} else {
@@ -303,9 +303,9 @@ func (s *MCPLibServer) registerCommandTools(serverName string) {
 			if cmd.IsEnabled {
 				// Filter by server name
 				if serverName != "" {
-					// For a named server, only include commands for this server
-					if cmd.MCP != "" && cmd.MCP != serverName {
-						// Skip commands assigned to a different server
+					// For a named server, only include commands explicitly assigned to this server
+					if cmd.MCP != serverName {
+						// Skip commands not assigned to this server (including those with no MCP field)
 						continue
 					}
 				} else {
@@ -337,9 +337,9 @@ func (s *MCPLibServer) registerPrompts(serverName string) {
 	for name, promptConfig := range s.promptConfig {
 		// Filter by server name similar to commands
 		if serverName != "" {
-			// For a named server, only add prompts assigned to this server or with no MCP field
-			if promptConfig.MCP != "" && promptConfig.MCP != serverName {
-				// Skip prompts assigned to a different server
+			// For a named server, only add prompts explicitly assigned to this server
+			if promptConfig.MCP != serverName {
+				// Skip prompts not assigned to this server (including those with no MCP field)
 				continue
 			}
 		} else {
