@@ -16,15 +16,22 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+// RemoteEntry represents a single remote repository configuration
+type RemoteEntry struct {
+	Name string `toml:"name"`
+	URL  string `toml:"url"`
+}
+
 // RemoteConfig represents the remote configuration stored in remote.toml
 type RemoteConfig struct {
-	RemoteURL string `toml:"remote-url"`
+	Remotes []RemoteEntry `toml:"remotes"`
 }
 
 // VersionInfo represents file version tracking information
 type VersionInfo struct {
 	LastCommit string            `toml:"last-commit"`
 	FileSHAs   map[string]string `toml:"file-shas"`
+	RemoteName string            `toml:"remote-name"` // Track which remote this version info belongs to
 }
 
 // Manager handles remote configuration operations
@@ -130,7 +137,9 @@ func (m *Manager) EnsureRemoteConfig() error {
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		// Create empty remote config
-		emptyConfig := RemoteConfig{}
+		emptyConfig := RemoteConfig{
+			Remotes: []RemoteEntry{},
+		}
 		if err := m.saveRemoteConfig(&emptyConfig); err != nil {
 			return fmt.Errorf("failed to create remote config file: %w", err)
 		}
@@ -150,6 +159,11 @@ func (m *Manager) loadRemoteConfig() (*RemoteConfig, error) {
 	var remoteConfig RemoteConfig
 	if _, err := toml.DecodeFile(configPath, &remoteConfig); err != nil {
 		return nil, fmt.Errorf("failed to decode remote config file: %w", err)
+	}
+
+	// Initialize remotes slice if nil
+	if remoteConfig.Remotes == nil {
+		remoteConfig.Remotes = []RemoteEntry{}
 	}
 
 	return &remoteConfig, nil
@@ -175,8 +189,21 @@ func (m *Manager) saveRemoteConfig(config *RemoteConfig) error {
 	return nil
 }
 
-// Add adds a remote URL to the configuration
-func (m *Manager) Add(url string) error {
+// findRemoteByName finds a remote entry by name
+func (m *Manager) findRemoteByName(config *RemoteConfig, name string) (*RemoteEntry, int) {
+	for i, remote := range config.Remotes {
+		if remote.Name == name {
+			return &remote, i
+		}
+	}
+	return nil, -1
+}
+
+// Add adds a named remote URL to the configuration
+func (m *Manager) Add(name, url string) error {
+	if name == "" {
+		return fmt.Errorf("remote name cannot be empty")
+	}
 	if url == "" {
 		return fmt.Errorf("remote URL cannot be empty")
 	}
@@ -191,48 +218,71 @@ func (m *Manager) Add(url string) error {
 		return err
 	}
 
-	// Create config with the new URL
-	config := &RemoteConfig{
-		RemoteURL: url,
+	// Load existing config
+	config, err := m.loadRemoteConfig()
+	if err != nil {
+		return err
 	}
+
+	// Check if remote name already exists
+	if existing, _ := m.findRemoteByName(config, name); existing != nil {
+		return fmt.Errorf("remote '%s' already exists with URL: %s", name, existing.URL)
+	}
+
+	// Add new remote
+	config.Remotes = append(config.Remotes, RemoteEntry{
+		Name: name,
+		URL:  url,
+	})
 
 	if err := m.saveRemoteConfig(config); err != nil {
 		return err
 	}
 
-	logging.Message("Added remote URL: %s", url)
+	logging.Message("Added remote '%s' with URL: %s", name, url)
 	return nil
 }
 
-// Remove removes the current remote URL from the configuration
-func (m *Manager) Remove() error {
+// Remove removes a named remote from the configuration
+func (m *Manager) Remove(name string) error {
+	if name == "" {
+		return fmt.Errorf("remote name cannot be empty")
+	}
+
 	// Ensure remote config exists
 	if err := m.EnsureRemoteConfig(); err != nil {
 		return err
 	}
 
-	// Load current config to check if there's a URL to remove
-	currentConfig, err := m.loadRemoteConfig()
+	// Load existing config
+	config, err := m.loadRemoteConfig()
 	if err != nil {
 		return err
 	}
 
-	if currentConfig.RemoteURL == "" {
-		return fmt.Errorf("no remote URL configured to remove")
+	// Find and remove the remote
+	_, index := m.findRemoteByName(config, name)
+	if index == -1 {
+		return fmt.Errorf("remote '%s' not found", name)
 	}
 
-	// Create empty config
-	emptyConfig := &RemoteConfig{}
+	// Remove from slice
+	config.Remotes = append(config.Remotes[:index], config.Remotes[index+1:]...)
 
-	if err := m.saveRemoteConfig(emptyConfig); err != nil {
+	if err := m.saveRemoteConfig(config); err != nil {
 		return err
 	}
 
-	logging.Message("Removed remote URL: %s", currentConfig.RemoteURL)
+	// Also remove the version tracking file for this remote
+	if err := m.removeVersionInfo(name); err != nil {
+		logging.Warning("Failed to remove version info for remote '%s': %v", name, err)
+	}
+
+	logging.Message("Removed remote '%s'", name)
 	return nil
 }
 
-// Show displays the current remote URL or notifies if not set
+// Show displays all configured remotes
 func (m *Manager) Show() error {
 	// Ensure remote config exists
 	if err := m.EnsureRemoteConfig(); err != nil {
@@ -244,18 +294,37 @@ func (m *Manager) Show() error {
 		return err
 	}
 
-	if config.RemoteURL == "" {
-		fmt.Println("No remote URL configured. Use 'interop config remote add <url>' to set one.")
+	fmt.Println("Remote Configurations:")
+	fmt.Println("======================")
+	fmt.Println()
+
+	if len(config.Remotes) == 0 {
+		fmt.Println("No remote repositories configured.")
+		fmt.Println()
+		fmt.Println("Add a remote with:")
+		fmt.Println("  interop config remote add <name> <git-url>")
 		return nil
 	}
 
-	fmt.Printf("Current remote URL: %s\n", config.RemoteURL)
+	for _, remote := range config.Remotes {
+		fmt.Printf("🔗 %s\n", remote.Name)
+		fmt.Printf("   URL: %s\n", remote.URL)
+
+		// Validate URL and show status
+		if err := m.validateGitURL(remote.URL); err != nil {
+			fmt.Printf("   Status: ❌ Invalid Git URL: %v\n", err)
+		} else {
+			fmt.Printf("   Status: ✓ Valid Git URL\n")
+		}
+		fmt.Println()
+	}
+
 	return nil
 }
 
-// Fetch is a placeholder for future implementation
-func (m *Manager) Fetch() error {
-	// Ensure remote config exists and load it
+// Fetch fetches configurations from remotes (all or specific named remote)
+func (m *Manager) Fetch(remoteName string) error {
+	// Ensure remote config exists
 	if err := m.EnsureRemoteConfig(); err != nil {
 		return err
 	}
@@ -265,105 +334,140 @@ func (m *Manager) Fetch() error {
 		return err
 	}
 
-	if config.RemoteURL == "" {
-		return fmt.Errorf("no remote URL configured. Use 'interop config remote add <url>' to set one")
+	if len(config.Remotes) == 0 {
+		return fmt.Errorf("no remote repositories configured")
 	}
 
-	logging.Message("Fetching configuration from remote: %s", config.RemoteURL)
+	var remotesToFetch []RemoteEntry
 
-	// Load existing version info
-	versionInfo, err := m.loadVersionInfo()
-	if err != nil {
-		return fmt.Errorf("failed to load version info: %w", err)
+	if remoteName != "" {
+		// Fetch specific remote
+		remote, _ := m.findRemoteByName(config, remoteName)
+		if remote == nil {
+			return fmt.Errorf("remote '%s' not found", remoteName)
+		}
+		remotesToFetch = []RemoteEntry{*remote}
+	} else {
+		// Fetch all remotes
+		remotesToFetch = config.Remotes
 	}
 
+	for _, remote := range remotesToFetch {
+		logging.Message("Fetching from remote '%s' (%s)...", remote.Name, remote.URL)
+		if err := m.fetchFromRemote(remote); err != nil {
+			logging.Error("Failed to fetch from remote '%s': %v", remote.Name, err)
+			continue
+		}
+		logging.Message("Successfully fetched from remote '%s'", remote.Name)
+	}
+
+	return nil
+}
+
+// fetchFromRemote fetches from a specific remote
+func (m *Manager) fetchFromRemote(remote RemoteEntry) error {
 	// Clone repository to temporary directory
-	tmpDir, err := m.cloneRepository(config.RemoteURL)
+	tmpDir, err := m.cloneRepository(remote.URL)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to clone repository: %w", err)
 	}
-	defer os.RemoveAll(tmpDir) // Clean up temporary directory
+	defer os.RemoveAll(tmpDir)
+
+	// Validate repository structure
+	if err := m.validateRepoStructure(tmpDir); err != nil {
+		return fmt.Errorf("invalid repository structure: %w", err)
+	}
 
 	// Get current commit ID
 	currentCommit, err := m.runGitCommand(tmpDir, "rev-parse", "HEAD")
 	if err != nil {
-		return fmt.Errorf("failed to get current commit ID: %w", err)
+		return fmt.Errorf("failed to get current commit: %w", err)
+	}
+	currentCommit = strings.TrimSpace(currentCommit)
+
+	// Load existing version info for this remote
+	versionInfo, err := m.loadVersionInfoForRemote(remote.Name)
+	if err != nil {
+		// If version info doesn't exist, create new one
+		versionInfo = &VersionInfo{
+			FileSHAs:   make(map[string]string),
+			RemoteName: remote.Name,
+		}
 	}
 
-	// Check if we need to update (compare commit IDs)
-	if versionInfo.LastCommit == currentCommit {
-		commitShort := currentCommit
-		if len(commitShort) > 8 {
-			commitShort = commitShort[:8]
-		}
-		logging.Message("Remote configuration is up to date (commit: %s)", commitShort)
+	// Check if we need to update (commit changed or no previous version info)
+	if versionInfo.LastCommit == currentCommit && len(versionInfo.FileSHAs) > 0 {
+		logging.Message("Remote '%s' is already up to date (commit: %s)", remote.Name, currentCommit[:8])
 		return nil
 	}
 
-	lastCommitShort := versionInfo.LastCommit
-	if len(lastCommitShort) > 8 {
-		lastCommitShort = lastCommitShort[:8]
-	} else if lastCommitShort == "" {
-		lastCommitShort = "none"
-	}
+	logging.Message("Updating from remote '%s' (commit: %s)", remote.Name, currentCommit[:8])
 
-	currentCommitShort := currentCommit
-	if len(currentCommitShort) > 8 {
-		currentCommitShort = currentCommitShort[:8]
-	}
-
-	logging.Message("New changes detected. Last commit: %s, Current commit: %s",
-		lastCommitShort, currentCommitShort)
-
-	// Validate repository structure
-	if err := m.validateRepoStructure(tmpDir); err != nil {
-		return err
-	}
-
-	// Get remote configuration directories
-	remoteConfigsDir, remoteExecutablesDir, err := m.getRemoteConfigDirs()
+	// Get remote directories
+	remoteConfigDir, remoteExecutablesDir, err := m.getRemoteConfigDirs()
 	if err != nil {
 		return err
 	}
 
-	// Prepare new version info
-	newVersionInfo := &VersionInfo{
-		LastCommit: currentCommit,
-		FileSHAs:   make(map[string]string),
+	// Sync config.d directory if it exists
+	srcConfigDir := filepath.Join(tmpDir, "config.d")
+	if _, err := os.Stat(srcConfigDir); err == nil {
+		if err := os.MkdirAll(remoteConfigDir, 0755); err != nil {
+			return fmt.Errorf("failed to create remote config directory: %w", err)
+		}
+
+		newSHAs := make(map[string]string)
+		if err := m.syncDirectory(srcConfigDir, remoteConfigDir, versionInfo.FileSHAs, "config.d"); err != nil {
+			return fmt.Errorf("failed to sync config directory: %w", err)
+		}
+
+		// Update SHAs for config files
+		if err := m.updateSHAsForDirectory(remoteConfigDir, newSHAs, "config.d"); err != nil {
+			return fmt.Errorf("failed to update SHAs for config directory: %w", err)
+		}
+
+		// Merge new SHAs
+		for path, sha := range newSHAs {
+			versionInfo.FileSHAs[path] = sha
+		}
 	}
 
-	// Sync config.d directory
-	configSrcDir := filepath.Join(tmpDir, "config.d")
-	logging.Message("Syncing config.d to %s", remoteConfigsDir)
-	if err := m.syncDirectory(configSrcDir, remoteConfigsDir, newVersionInfo.FileSHAs, "config.d"); err != nil {
-		return fmt.Errorf("failed to sync config.d: %w", err)
+	// Sync executables directory if it exists
+	srcExecutablesDir := filepath.Join(tmpDir, "executables")
+	if _, err := os.Stat(srcExecutablesDir); err == nil {
+		if err := os.MkdirAll(remoteExecutablesDir, 0755); err != nil {
+			return fmt.Errorf("failed to create remote executables directory: %w", err)
+		}
+
+		newSHAs := make(map[string]string)
+		if err := m.syncDirectory(srcExecutablesDir, remoteExecutablesDir, versionInfo.FileSHAs, "executables"); err != nil {
+			return fmt.Errorf("failed to sync executables directory: %w", err)
+		}
+
+		// Update SHAs for executable files
+		if err := m.updateSHAsForDirectory(remoteExecutablesDir, newSHAs, "executables"); err != nil {
+			return fmt.Errorf("failed to update SHAs for executables directory: %w", err)
+		}
+
+		// Merge new SHAs
+		for path, sha := range newSHAs {
+			versionInfo.FileSHAs[path] = sha
+		}
 	}
 
-	// Clean up removed files in config.d.remote
-	if err := m.cleanupRemovedFiles(remoteConfigsDir, newVersionInfo.FileSHAs, "config.d"); err != nil {
+	// Clean up files that were removed from remote
+	if err := m.cleanupRemovedFiles(remoteConfigDir, versionInfo.FileSHAs, "config.d"); err != nil {
 		logging.Warning("Failed to cleanup removed config files: %v", err)
 	}
-
-	// Sync executables directory
-	executablesSrcDir := filepath.Join(tmpDir, "executables")
-	logging.Message("Syncing executables to %s", remoteExecutablesDir)
-	if err := m.syncDirectory(executablesSrcDir, remoteExecutablesDir, newVersionInfo.FileSHAs, "executables"); err != nil {
-		return fmt.Errorf("failed to sync executables: %w", err)
-	}
-
-	// Clean up removed files in executables.remote
-	if err := m.cleanupRemovedFiles(remoteExecutablesDir, newVersionInfo.FileSHAs, "executables"); err != nil {
+	if err := m.cleanupRemovedFiles(remoteExecutablesDir, versionInfo.FileSHAs, "executables"); err != nil {
 		logging.Warning("Failed to cleanup removed executable files: %v", err)
 	}
 
-	// Save updated version info
-	if err := m.saveVersionInfo(newVersionInfo); err != nil {
+	// Update version info
+	versionInfo.LastCommit = currentCommit
+	if err := m.saveVersionInfoForRemote(remote.Name, versionInfo); err != nil {
 		return fmt.Errorf("failed to save version info: %w", err)
 	}
-
-	logging.Message("Successfully fetched remote configuration")
-	logging.Message("Total files: %d", len(newVersionInfo.FileSHAs))
-	logging.Message("Current commit: %s", currentCommit)
 
 	return nil
 }
@@ -659,12 +763,6 @@ func (m *Manager) Clear() error {
 		return err
 	}
 
-	// Get versions file path
-	versionsPath, err := m.getVersionsPath()
-	if err != nil {
-		return err
-	}
-
 	removedItems := 0
 
 	// Remove config.d.remote directory
@@ -685,13 +783,58 @@ func (m *Manager) Clear() error {
 		removedItems++
 	}
 
-	// Remove versions.toml file
-	if _, err := os.Stat(versionsPath); err == nil {
-		if err := os.Remove(versionsPath); err != nil {
-			return fmt.Errorf("failed to remove versions file: %w", err)
+	// Remove all version tracking files for named remotes
+	root, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get user home directory: %w", err)
+	}
+
+	settingsDir := filepath.Join(root, m.configManager.PathConfig.SettingsDir)
+	appDir := filepath.Join(settingsDir, m.configManager.PathConfig.AppDir)
+	remoteDir := filepath.Join(appDir, m.configManager.PathConfig.RemoteDir)
+
+	// Remove all versions-*.toml files
+	if _, err := os.Stat(remoteDir); err == nil {
+		entries, err := os.ReadDir(remoteDir)
+		if err == nil {
+			for _, entry := range entries {
+				if !entry.IsDir() && strings.HasPrefix(entry.Name(), "versions-") && strings.HasSuffix(entry.Name(), ".toml") {
+					versionFilePath := filepath.Join(remoteDir, entry.Name())
+					if err := os.Remove(versionFilePath); err != nil {
+						logging.Warning("Failed to remove version file %s: %v", versionFilePath, err)
+					} else {
+						logging.Message("Removed version tracking file: %s", versionFilePath)
+						removedItems++
+					}
+				}
+			}
 		}
-		logging.Message("Removed versions tracking file: %s", versionsPath)
-		removedItems++
+	}
+
+	// Remove legacy versions.toml file if it exists
+	legacyVersionsPath, err := m.getVersionsPath()
+	if err == nil {
+		if _, err := os.Stat(legacyVersionsPath); err == nil {
+			if err := os.Remove(legacyVersionsPath); err != nil {
+				logging.Warning("Failed to remove legacy versions file: %v", err)
+			} else {
+				logging.Message("Removed legacy versions tracking file: %s", legacyVersionsPath)
+				removedItems++
+			}
+		}
+	}
+
+	// Clear the remote configuration (remove all remotes)
+	if err := m.EnsureRemoteConfig(); err != nil {
+		return err
+	}
+
+	emptyConfig := &RemoteConfig{
+		Remotes: []RemoteEntry{},
+	}
+
+	if err := m.saveRemoteConfig(emptyConfig); err != nil {
+		return fmt.Errorf("failed to clear remote configuration: %w", err)
 	}
 
 	if removedItems == 0 {
@@ -701,4 +844,122 @@ func (m *Manager) Clear() error {
 	}
 
 	return nil
+}
+
+// getVersionsPathForRemote returns the path to the versions file for a specific remote
+func (m *Manager) getVersionsPathForRemote(remoteName string) (string, error) {
+	root, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get user home directory: %w", err)
+	}
+
+	settingsDir := filepath.Join(root, m.configManager.PathConfig.SettingsDir)
+	appDir := filepath.Join(settingsDir, m.configManager.PathConfig.AppDir)
+	remoteDir := filepath.Join(appDir, m.configManager.PathConfig.RemoteDir)
+
+	return filepath.Join(remoteDir, fmt.Sprintf("versions-%s.toml", remoteName)), nil
+}
+
+// loadVersionInfoForRemote loads the version information for a specific remote
+func (m *Manager) loadVersionInfoForRemote(remoteName string) (*VersionInfo, error) {
+	versionsPath, err := m.getVersionsPathForRemote(remoteName)
+	if err != nil {
+		return nil, err
+	}
+
+	// If file doesn't exist, return empty version info
+	if _, err := os.Stat(versionsPath); os.IsNotExist(err) {
+		return &VersionInfo{
+			FileSHAs:   make(map[string]string),
+			RemoteName: remoteName,
+		}, nil
+	}
+
+	var versionInfo VersionInfo
+	if _, err := toml.DecodeFile(versionsPath, &versionInfo); err != nil {
+		return nil, fmt.Errorf("failed to decode versions file for remote '%s': %w", remoteName, err)
+	}
+
+	if versionInfo.FileSHAs == nil {
+		versionInfo.FileSHAs = make(map[string]string)
+	}
+	versionInfo.RemoteName = remoteName
+
+	return &versionInfo, nil
+}
+
+// saveVersionInfoForRemote saves the version information for a specific remote
+func (m *Manager) saveVersionInfoForRemote(remoteName string, versionInfo *VersionInfo) error {
+	versionsPath, err := m.getVersionsPathForRemote(remoteName)
+	if err != nil {
+		return err
+	}
+
+	// Ensure the directory exists
+	if err := os.MkdirAll(filepath.Dir(versionsPath), 0o755); err != nil {
+		return fmt.Errorf("failed to create versions directory: %w", err)
+	}
+
+	f, err := os.Create(versionsPath)
+	if err != nil {
+		return fmt.Errorf("failed to create versions file for remote '%s': %w", remoteName, err)
+	}
+	defer f.Close()
+
+	if err := toml.NewEncoder(f).Encode(versionInfo); err != nil {
+		return fmt.Errorf("failed to encode versions data for remote '%s': %w", remoteName, err)
+	}
+
+	return nil
+}
+
+// removeVersionInfo removes the version tracking file for a specific remote
+func (m *Manager) removeVersionInfo(remoteName string) error {
+	versionsPath, err := m.getVersionsPathForRemote(remoteName)
+	if err != nil {
+		return err
+	}
+
+	if _, err := os.Stat(versionsPath); os.IsNotExist(err) {
+		// File doesn't exist, nothing to remove
+		return nil
+	}
+
+	if err := os.Remove(versionsPath); err != nil {
+		return fmt.Errorf("failed to remove versions file for remote '%s': %w", remoteName, err)
+	}
+
+	return nil
+}
+
+// updateSHAsForDirectory calculates and updates SHAs for all files in a directory
+func (m *Manager) updateSHAsForDirectory(dirPath string, shas map[string]string, relativePath string) error {
+	return filepath.WalkDir(dirPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if d.IsDir() {
+			return nil
+		}
+
+		// Calculate relative path from the base directory
+		relPath, err := filepath.Rel(dirPath, path)
+		if err != nil {
+			return fmt.Errorf("failed to get relative path: %w", err)
+		}
+
+		// Create the key for the SHA map
+		key := filepath.Join(relativePath, relPath)
+		key = filepath.ToSlash(key) // Normalize path separators
+
+		// Calculate SHA for the file
+		sha, err := m.calculateFileSHA(path)
+		if err != nil {
+			return fmt.Errorf("failed to calculate SHA for %s: %w", path, err)
+		}
+
+		shas[key] = sha
+		return nil
+	})
 }

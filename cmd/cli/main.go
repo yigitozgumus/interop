@@ -156,42 +156,49 @@ func main() {
 
 	// Remote add command
 	remoteAddCmd := &cobra.Command{
-		Use:   "add [url]",
-		Short: "Add a remote URL to configuration",
-		Long:  "Add a remote URL that will be used for managing multiple config files and executables",
-		Args:  cobra.MaximumNArgs(1),
+		Use:   "add <name> <url>",
+		Short: "Add a named remote repository",
+		Long:  "Add a named remote Git repository that will be used for managing multiple config files and executables",
+		Args:  cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
-			if len(args) == 0 {
-				logging.ErrorAndExit("Remote URL is required. Usage: interop config remote add <url>")
-			}
+			name := args[0]
+			url := args[1]
 
-			url := args[0]
+			if name == "" {
+				logging.ErrorAndExit("Remote name cannot be empty")
+			}
 			if url == "" {
 				logging.ErrorAndExit("Remote URL cannot be empty")
 			}
 
 			remoteMgr := remote.NewManager()
-			if err := remoteMgr.Add(url); err != nil {
-				logging.ErrorAndExit("Failed to add remote URL: %v", err)
+			if err := remoteMgr.Add(name, url); err != nil {
+				logging.ErrorAndExit("Failed to add remote '%s': %v", name, err)
 			}
 
-			fmt.Printf("Successfully added remote URL: %s\n", url)
+			fmt.Printf("Successfully added remote '%s' with URL: %s\n", name, url)
 		},
 	}
 	remoteCmd.AddCommand(remoteAddCmd)
 
 	// Remote remove command
 	remoteRemoveCmd := &cobra.Command{
-		Use:   "remove",
-		Short: "Remove the current remote URL",
-		Long:  "Remove the currently configured remote URL from the configuration",
+		Use:   "remove <name>",
+		Short: "Remove a named remote repository",
+		Long:  "Remove a named remote repository from the configuration",
+		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			remoteMgr := remote.NewManager()
-			if err := remoteMgr.Remove(); err != nil {
-				logging.ErrorAndExit("Failed to remove remote URL: %v", err)
+			name := args[0]
+			if name == "" {
+				logging.ErrorAndExit("Remote name cannot be empty")
 			}
 
-			fmt.Println("Successfully removed remote URL")
+			remoteMgr := remote.NewManager()
+			if err := remoteMgr.Remove(name); err != nil {
+				logging.ErrorAndExit("Failed to remove remote '%s': %v", name, err)
+			}
+
+			fmt.Printf("Successfully removed remote '%s'\n", name)
 		},
 	}
 	remoteCmd.AddCommand(remoteRemoveCmd)
@@ -199,26 +206,38 @@ func main() {
 	// Remote show command
 	remoteShowCmd := &cobra.Command{
 		Use:   "show",
-		Short: "Show the current remote URL",
-		Long:  "Display the currently configured remote URL or notify if not set",
+		Short: "Show all configured remote repositories",
+		Long:  "Display all configured remote repositories with their URLs and status",
 		Run: func(cmd *cobra.Command, args []string) {
 			remoteMgr := remote.NewManager()
 			if err := remoteMgr.Show(); err != nil {
-				logging.ErrorAndExit("Failed to show remote URL: %v", err)
+				logging.ErrorAndExit("Failed to show remote repositories: %v", err)
 			}
 		},
 	}
 	remoteCmd.AddCommand(remoteShowCmd)
 
-	// Remote fetch command (placeholder)
+	// Remote fetch command
 	remoteFetchCmd := &cobra.Command{
-		Use:   "fetch",
-		Short: "Fetch configuration from remote",
-		Long:  "Fetch configuration files and executables from the configured remote Git repository. This will clone the repository, validate its structure, and sync files to local remote directories.",
+		Use:   "fetch [name]",
+		Short: "Fetch configuration from remote repositories",
+		Long:  "Fetch configuration files and executables from all configured remote Git repositories or a specific named remote. This will clone the repositories, validate their structure, and sync files to local remote directories.",
+		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
+			var remoteName string
+			if len(args) > 0 {
+				remoteName = args[0]
+			}
+
 			remoteMgr := remote.NewManager()
-			if err := remoteMgr.Fetch(); err != nil {
+			if err := remoteMgr.Fetch(remoteName); err != nil {
 				logging.ErrorAndExit("Failed to fetch from remote: %v", err)
+			}
+
+			if remoteName != "" {
+				fmt.Printf("Successfully fetched from remote '%s'\n", remoteName)
+			} else {
+				fmt.Println("Successfully fetched from all configured remotes")
 			}
 		},
 	}

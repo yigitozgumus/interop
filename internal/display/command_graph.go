@@ -120,13 +120,9 @@ func printConfigurationSources(cfg *settings.Settings) {
 		fmt.Printf("   %s executables.remote: Not available\n", CommandDisabledSymbol)
 	}
 
-	// Show remote versions file if it exists
-	versionsFile := filepath.Join(configDir, "versions.toml")
-	if _, err := os.Stat(versionsFile); err == nil {
-		fmt.Printf("   %s Remote tracking: Active\n", CommandEnabledSymbol)
-	} else {
-		fmt.Printf("   %s Remote tracking: Not active\n", CommandDisabledSymbol)
-	}
+	// Show remote tracking information for named remotes
+	remoteDir := filepath.Join(configDir, "remote")
+	showRemoteTrackingInfo(remoteDir)
 
 	// Show any potential conflicts
 	showPotentialConflicts(localConfigDir, remoteConfigDir)
@@ -430,4 +426,42 @@ func getCommandsFromDir(dirPath string) map[string]bool {
 	})
 
 	return commands
+}
+
+// showRemoteTrackingInfo displays information about configured remotes and their tracking status
+func showRemoteTrackingInfo(remoteDir string) {
+	// Check for remote.toml configuration file
+	remoteConfigPath := filepath.Join(remoteDir, "remote.toml")
+	if _, err := os.Stat(remoteConfigPath); err != nil {
+		fmt.Printf("   %s Remote tracking: No remotes configured\n", CommandDisabledSymbol)
+		return
+	}
+
+	// Try to load remote configuration to show configured remotes
+	// We need to import the remote package for this to work
+	// For now, let's just check for version files
+	entries, err := os.ReadDir(remoteDir)
+	if err != nil {
+		fmt.Printf("   %s Remote tracking: Error reading remote directory\n", CommandDisabledSymbol)
+		return
+	}
+
+	// Count version files (versions-*.toml)
+	versionFileCount := 0
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasPrefix(entry.Name(), "versions-") && strings.HasSuffix(entry.Name(), ".toml") {
+			versionFileCount++
+		}
+	}
+
+	if versionFileCount > 0 {
+		fmt.Printf("   %s Remote tracking: Active (%d remote(s) tracked)\n", CommandEnabledSymbol, versionFileCount)
+	} else {
+		// Check if remote.toml exists but no version files
+		if _, err := os.Stat(remoteConfigPath); err == nil {
+			fmt.Printf("   %s Remote tracking: Configured but not fetched yet\n", CommandDisabledSymbol)
+		} else {
+			fmt.Printf("   %s Remote tracking: Not configured\n", CommandDisabledSymbol)
+		}
+	}
 }
