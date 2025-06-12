@@ -867,6 +867,11 @@ func Load() (*Settings, error) {
 			c.MCPServers = make(map[string]MCPServer)
 		}
 
+		// Set default MCP port if not configured
+		if c.MCPPort == 0 {
+			c.MCPPort = 8081
+		}
+
 		// Handle command directories with backwards compatibility
 		commandDirs := c.CommandDirs
 
@@ -914,7 +919,14 @@ func GetMCPPort() int {
 	cfg, err := Load()
 	if err != nil {
 		logging.Error("Failed to load settings: " + err.Error())
+		return 8081 // Return default port if settings can't be loaded
 	}
+
+	// If MCPPort is not configured (0), return the default port
+	if cfg.MCPPort == 0 {
+		return 8081
+	}
+
 	return cfg.MCPPort
 }
 
