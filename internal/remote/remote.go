@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"interop/internal/config"
 	"interop/internal/logging"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -25,6 +28,68 @@ func NewManager() *Manager {
 	return &Manager{
 		configManager: config.NewManager(),
 	}
+}
+
+// validateGitURL validates if the provided URL is a valid Git repository URL
+func (m *Manager) validateGitURL(gitURL string) error {
+	if gitURL == "" {
+		return fmt.Errorf("URL cannot be empty")
+	}
+
+	// Check for SSH Git URLs (git@host:user/repo.git)
+	sshPattern := regexp.MustCompile(`^git@[\w\.\-]+:[\w\.\-~]+/[\w\.\-]+\.git$`)
+	if sshPattern.MatchString(gitURL) {
+		return nil
+	}
+
+	// Check for HTTPS/HTTP Git URLs
+	parsedURL, err := url.Parse(gitURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL format: %w", err)
+	}
+
+	// Must be HTTP or HTTPS
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return fmt.Errorf("URL must use http, https, or SSH format (git@host:user/repo.git)")
+	}
+
+	// Check if it's a known Git hosting service or has .git extension
+	host := strings.ToLower(parsedURL.Host)
+	path := parsedURL.Path
+
+	// Known Git hosting services
+	knownHosts := []string{
+		"github.com",
+		"gitlab.com",
+		"bitbucket.org",
+		"codeberg.org",
+		"git.sr.ht",
+	}
+
+	isKnownHost := false
+	for _, knownHost := range knownHosts {
+		if host == knownHost || strings.HasSuffix(host, "."+knownHost) {
+			isKnownHost = true
+			break
+		}
+	}
+
+	// If it's a known host, the path should look like a repository path
+	if isKnownHost {
+		// Path should be like /user/repo, /user/repo.git, or /~user/repo (for SourceHut)
+		pathPattern := regexp.MustCompile(`^/[~]?[\w\.\-]+/[\w\.\-]+(?:\.git)?/?$`)
+		if !pathPattern.MatchString(path) {
+			return fmt.Errorf("invalid repository path format for %s", host)
+		}
+		return nil
+	}
+
+	// For unknown hosts, require .git extension
+	if !strings.HasSuffix(path, ".git") {
+		return fmt.Errorf("URL must end with .git or be from a known Git hosting service")
+	}
+
+	return nil
 }
 
 // GetRemoteConfigPath returns the path to the remote.toml file
@@ -105,6 +170,11 @@ func (m *Manager) saveRemoteConfig(config *RemoteConfig) error {
 func (m *Manager) Add(url string) error {
 	if url == "" {
 		return fmt.Errorf("remote URL cannot be empty")
+	}
+
+	// Validate the URL is a valid Git repository URL
+	if err := m.validateGitURL(url); err != nil {
+		return fmt.Errorf("invalid Git repository URL: %w", err)
 	}
 
 	// Ensure remote config exists
