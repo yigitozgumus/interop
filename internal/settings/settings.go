@@ -324,6 +324,7 @@ type PathConfig struct {
 	AppDir         string
 	CfgFile        string
 	ExecutablesDir string
+	CommandsDir    string
 }
 
 // DefaultPathConfig contains the default paths configuration
@@ -332,6 +333,7 @@ var DefaultPathConfig = PathConfig{
 	AppDir:         "interop",
 	CfgFile:        "settings.toml",
 	ExecutablesDir: "executables",
+	CommandsDir:    "commands.d",
 }
 
 var (
@@ -367,7 +369,7 @@ var defaultSettingsTemplate = `# Interop Settings Template
 #   "~/bin"
 # ]
 # command_dirs = [              # Directories to load additional command definitions from
-#   "~/.config/interop/commands.d",
+#   "~/.config/interop/commands.d"  # Default: if not specified, this directory is automatically used
 #   "~/projects/shared/interop-commands"
 # ]
 # mcp_port = 8081               # Default port for the main MCP server
@@ -579,6 +581,14 @@ func validate() (string, error) {
 		logging.Error("Can't create the directory for executables: " + e.Error())
 	} else {
 		logging.Message("executables directory is created")
+	}
+
+	// Create commands.d directory for command definitions
+	commandsDir := filepath.Join(base, pathConfig.CommandsDir)
+	if e := os.MkdirAll(commandsDir, 0o755); e != nil {
+		logging.Error("Can't create the directory for commands: " + e.Error())
+	} else {
+		logging.Message("commands.d directory is created")
 	}
 
 	if _, e := os.Stat(path); errors.Is(e, os.ErrNotExist) {
@@ -841,7 +851,7 @@ func Load() (*Settings, error) {
 			logging.Message("Projects are validated")
 		}
 
-		// Provide default values for fields that might not be in the file
+		// Initialize empty collections if nil
 		if c.Projects == nil {
 			c.Projects = make(map[string]Project)
 		}
@@ -855,9 +865,24 @@ func Load() (*Settings, error) {
 			c.MCPServers = make(map[string]MCPServer)
 		}
 
+		// Handle command directories with backwards compatibility
+		commandDirs := c.CommandDirs
+
+		// If no command_dirs are explicitly configured, add the default commands.d directory
+		if len(commandDirs) == 0 {
+			defaultCommandsPath, err := GetCommandsPath()
+			if err == nil {
+				// Only add if the directory exists to avoid warnings
+				if _, err := os.Stat(defaultCommandsPath); err == nil {
+					commandDirs = []string{defaultCommandsPath}
+					logging.Message("Using default commands directory: %s", defaultCommandsPath)
+				}
+			}
+		}
+
 		// Load commands from command directories
-		if len(c.CommandDirs) > 0 {
-			mergedCommands, conflicts := mergeCommands(c.Commands, c.CommandDirs)
+		if len(commandDirs) > 0 {
+			mergedCommands, conflicts := mergeCommands(c.Commands, commandDirs)
 			c.Commands = mergedCommands
 
 			// Log conflicts for visibility
@@ -869,7 +894,7 @@ func Load() (*Settings, error) {
 				logging.Message("Found %d command name conflicts. Main settings.toml takes precedence.", len(conflicts))
 			}
 
-			logging.Message("Loaded commands from %d directories", len(c.CommandDirs))
+			logging.Message("Loaded commands from %d directories", len(commandDirs))
 		}
 
 		// Validate MCP configuration
@@ -1069,4 +1094,19 @@ func MergeEnvironmentVariables(cfg *Settings, commandName string, projectName st
 	}
 
 	return env
+}
+
+// GetCommandsPath returns the path to the default commands directory
+func GetCommandsPath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get user home directory: %w", err)
+	}
+
+	return filepath.Join(
+		homeDir,
+		DefaultPathConfig.SettingsDir,
+		DefaultPathConfig.AppDir,
+		DefaultPathConfig.CommandsDir,
+	), nil
 }
