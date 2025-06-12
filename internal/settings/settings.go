@@ -982,6 +982,16 @@ func Load() (*Settings, error) {
 			}
 		}
 
+		// Add remote configuration directories if they exist
+		homeDir, err := os.UserHomeDir()
+		if err == nil {
+			remoteConfigsDir := filepath.Join(homeDir, pathConfig.SettingsDir, pathConfig.AppDir, "config.d.remote")
+			if _, err := os.Stat(remoteConfigsDir); err == nil {
+				commandDirs = append(commandDirs, remoteConfigsDir)
+				logging.Message("Including remote config directory: %s", remoteConfigsDir)
+			}
+		}
+
 		// Load configuration from command directories
 		if len(commandDirs) > 0 {
 			mergedConfig, conflicts := mergeConfig(&c, commandDirs)
@@ -1045,39 +1055,49 @@ func GetExecutablesPath() (string, error) {
 	), nil
 }
 
-// GetExecutableSearchPaths returns all paths to search for executables
-// This includes the default executables path and any additional paths from config
+// GetExecutableSearchPaths returns the executable search paths including the main executables directory
 func GetExecutableSearchPaths(cfg *Settings) ([]string, error) {
-	// Start with the default executables path
-	defaultPath, err := GetExecutablesPath()
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get user home directory: %w", err)
 	}
 
-	paths := []string{defaultPath}
+	// Start with the main executables directory
+	executablesPath := filepath.Join(
+		homeDir,
+		pathConfig.SettingsDir,
+		pathConfig.AppDir,
+		pathConfig.ExecutablesDir,
+	)
 
-	// Add user-configured paths
+	// Add remote executables directory (always include it by default)
+	remoteExecutablesPath := filepath.Join(
+		homeDir,
+		pathConfig.SettingsDir,
+		pathConfig.AppDir,
+		"executables.remote",
+	)
+
+	searchPaths := []string{executablesPath, remoteExecutablesPath}
+
+	// Add any additional configured search paths
 	for _, path := range cfg.ExecutableSearchPaths {
-		// Handle tilde expansion for home directory
+		// Handle tilde expansion
 		if strings.HasPrefix(path, "~/") {
-			homeDir, err := os.UserHomeDir()
-			if err != nil {
-				logging.Warning("Failed to get home directory for path expansion: %v", err)
-				continue
-			}
 			path = filepath.Join(homeDir, path[2:])
+		} else if !filepath.IsAbs(path) {
+			path = filepath.Join(homeDir, path)
 		}
 
-		// Add the path if it exists
+		// Check if path exists and add it
 		if _, err := os.Stat(path); err == nil {
-			paths = append(paths, path)
+			searchPaths = append(searchPaths, path)
 		} else {
-			logging.Warning("Executable search path not found: %s", path)
+			logging.Warning("Configured executable search path does not exist: %s", path)
 		}
 	}
 
-	logging.Message("Executable search paths: %v", paths)
-	return paths, nil
+	return searchPaths, nil
 }
 
 // ParseStringSlice parses a TOML value into a string slice

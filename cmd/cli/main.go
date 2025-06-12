@@ -201,8 +201,8 @@ func main() {
 	// Remote fetch command (placeholder)
 	remoteFetchCmd := &cobra.Command{
 		Use:   "fetch",
-		Short: "Fetch configuration from remote (placeholder)",
-		Long:  "Fetch configuration files and executables from the configured remote URL (to be implemented)",
+		Short: "Fetch configuration from remote",
+		Long:  "Fetch configuration files and executables from the configured remote Git repository. This will clone the repository, validate its structure, and sync files to local remote directories.",
 		Run: func(cmd *cobra.Command, args []string) {
 			remoteMgr := remote.NewManager()
 			if err := remoteMgr.Fetch(); err != nil {
