@@ -16,6 +16,7 @@ type PathConfig struct {
 	AppDir         string
 	CfgFile        string
 	ExecutablesDir string
+	RemoteDir      string
 }
 
 // DefaultPathConfig contains the default paths configuration
@@ -24,6 +25,7 @@ var DefaultPathConfig = PathConfig{
 	AppDir:         "interop",
 	CfgFile:        "settings.toml",
 	ExecutablesDir: "executables",
+	RemoteDir:      "remote",
 }
 
 // Manager handles configuration file operations
@@ -80,6 +82,13 @@ func (m *Manager) EnsureConfigDirectories() error {
 		return fmt.Errorf("failed to create executables directory: %w", err)
 	}
 	logging.Message("Executables directory is created")
+
+	// Create remote directory
+	remoteDir := filepath.Join(base, m.PathConfig.RemoteDir)
+	if err := os.MkdirAll(remoteDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create remote directory: %w", err)
+	}
+	logging.Message("Remote directory is created")
 
 	return nil
 }

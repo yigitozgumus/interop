@@ -8,6 +8,7 @@ import (
 	"interop/internal/logging"
 	"interop/internal/mcp"
 	projectPkg "interop/internal/project"
+	"interop/internal/remote"
 	"interop/internal/settings"
 	"interop/internal/validation"
 	"interop/internal/validation/project"
@@ -103,10 +104,20 @@ func main() {
 
 	rootCmd.AddCommand(runCmd) // Add run as a top-level command for easier access
 
+	// Add Config command group
+	configCmd := &cobra.Command{
+		Use:   "config",
+		Short: "Manage configuration settings",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
+	}
+
 	// Define flag variable for the editor
 	var editorName string
 
-	editCmd := &cobra.Command{
+	// Config edit command (moved from root level)
+	configEditCmd := &cobra.Command{
 		Use:   "edit",
 		Short: "Edit the configuration file with your default editor or specified editor",
 		Long:  "Edit the configuration file using the editor specified by --editor flag, $EDITOR environment variable, or nano as fallback",
@@ -118,10 +129,94 @@ func main() {
 		},
 	}
 
-	// Add the --editor flag to the edit command
-	editCmd.Flags().StringVar(&editorName, "editor", "", "Editor to use for opening the configuration file (e.g., code, vim, nano)")
+	// Add the --editor flag to the config edit command
+	configEditCmd.Flags().StringVar(&editorName, "editor", "", "Editor to use for opening the configuration file (e.g., code, vim, nano)")
+	configCmd.AddCommand(configEditCmd)
 
-	rootCmd.AddCommand(editCmd)
+	// Add Remote command group under config
+	remoteCmd := &cobra.Command{
+		Use:   "remote",
+		Short: "Manage remote configuration",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
+	}
+
+	// Remote add command
+	remoteAddCmd := &cobra.Command{
+		Use:   "add [url]",
+		Short: "Add a remote URL to configuration",
+		Long:  "Add a remote URL that will be used for managing multiple config files and executables",
+		Args:  cobra.MaximumNArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			if len(args) == 0 {
+				logging.ErrorAndExit("Remote URL is required. Usage: interop config remote add <url>")
+			}
+
+			url := args[0]
+			if url == "" {
+				logging.ErrorAndExit("Remote URL cannot be empty")
+			}
+
+			remoteMgr := remote.NewManager()
+			if err := remoteMgr.Add(url); err != nil {
+				logging.ErrorAndExit("Failed to add remote URL: %v", err)
+			}
+
+			fmt.Printf("Successfully added remote URL: %s\n", url)
+		},
+	}
+	remoteCmd.AddCommand(remoteAddCmd)
+
+	// Remote remove command
+	remoteRemoveCmd := &cobra.Command{
+		Use:   "remove",
+		Short: "Remove the current remote URL",
+		Long:  "Remove the currently configured remote URL from the configuration",
+		Run: func(cmd *cobra.Command, args []string) {
+			remoteMgr := remote.NewManager()
+			if err := remoteMgr.Remove(); err != nil {
+				logging.ErrorAndExit("Failed to remove remote URL: %v", err)
+			}
+
+			fmt.Println("Successfully removed remote URL")
+		},
+	}
+	remoteCmd.AddCommand(remoteRemoveCmd)
+
+	// Remote show command
+	remoteShowCmd := &cobra.Command{
+		Use:   "show",
+		Short: "Show the current remote URL",
+		Long:  "Display the currently configured remote URL or notify if not set",
+		Run: func(cmd *cobra.Command, args []string) {
+			remoteMgr := remote.NewManager()
+			if err := remoteMgr.Show(); err != nil {
+				logging.ErrorAndExit("Failed to show remote URL: %v", err)
+			}
+		},
+	}
+	remoteCmd.AddCommand(remoteShowCmd)
+
+	// Remote fetch command (placeholder)
+	remoteFetchCmd := &cobra.Command{
+		Use:   "fetch",
+		Short: "Fetch configuration from remote (placeholder)",
+		Long:  "Fetch configuration files and executables from the configured remote URL (to be implemented)",
+		Run: func(cmd *cobra.Command, args []string) {
+			remoteMgr := remote.NewManager()
+			if err := remoteMgr.Fetch(); err != nil {
+				logging.ErrorAndExit("Failed to fetch from remote: %v", err)
+			}
+		},
+	}
+	remoteCmd.AddCommand(remoteFetchCmd)
+
+	// Add remote command to config command
+	configCmd.AddCommand(remoteCmd)
+
+	// Add config command group to root command
+	rootCmd.AddCommand(configCmd)
 
 	// Add MCP command group
 	mcpCmd := &cobra.Command{

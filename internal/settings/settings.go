@@ -325,6 +325,7 @@ type PathConfig struct {
 	CfgFile        string
 	ExecutablesDir string
 	ConfigDir      string
+	RemoteDir      string
 }
 
 // DefaultPathConfig contains the default paths configuration
@@ -334,6 +335,7 @@ var DefaultPathConfig = PathConfig{
 	CfgFile:        "settings.toml",
 	ExecutablesDir: "executables",
 	ConfigDir:      "config.d",
+	RemoteDir:      "remote",
 }
 
 var (
