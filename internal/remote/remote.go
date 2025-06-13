@@ -411,6 +411,9 @@ func (m *Manager) fetchFromRemote(remote RemoteEntry) error {
 		return err
 	}
 
+	// Track all current SHAs for cleanup
+	allCurrentSHAs := make(map[string]string)
+
 	// Sync config.d directory if it exists
 	srcConfigDir := filepath.Join(tmpDir, "config.d")
 	if _, err := os.Stat(srcConfigDir); err == nil {
@@ -423,14 +426,13 @@ func (m *Manager) fetchFromRemote(remote RemoteEntry) error {
 			return fmt.Errorf("failed to sync config directory: %w", err)
 		}
 
-		// Update SHAs for config files
 		if err := m.updateSHAsForDirectory(remoteConfigDir, newSHAs, "config.d"); err != nil {
 			return fmt.Errorf("failed to update SHAs for config directory: %w", err)
 		}
 
-		// Merge new SHAs
 		for path, sha := range newSHAs {
 			versionInfo.FileSHAs[path] = sha
+			allCurrentSHAs[path] = sha
 		}
 	}
 
@@ -446,23 +448,29 @@ func (m *Manager) fetchFromRemote(remote RemoteEntry) error {
 			return fmt.Errorf("failed to sync executables directory: %w", err)
 		}
 
-		// Update SHAs for executable files
 		if err := m.updateSHAsForDirectory(remoteExecutablesDir, newSHAs, "executables"); err != nil {
 			return fmt.Errorf("failed to update SHAs for executables directory: %w", err)
 		}
 
-		// Merge new SHAs
 		for path, sha := range newSHAs {
 			versionInfo.FileSHAs[path] = sha
+			allCurrentSHAs[path] = sha
 		}
 	}
 
 	// Clean up files that were removed from remote
-	if err := m.cleanupRemovedFiles(remoteConfigDir, versionInfo.FileSHAs, "config.d"); err != nil {
+	if err := m.cleanupRemovedFiles(remoteConfigDir, allCurrentSHAs, "config.d"); err != nil {
 		logging.Warning("Failed to cleanup removed config files: %v", err)
 	}
-	if err := m.cleanupRemovedFiles(remoteExecutablesDir, versionInfo.FileSHAs, "executables"); err != nil {
+	if err := m.cleanupRemovedFiles(remoteExecutablesDir, allCurrentSHAs, "executables"); err != nil {
 		logging.Warning("Failed to cleanup removed executable files: %v", err)
+	}
+
+	// Remove stale SHAs for files that no longer exist
+	for path := range versionInfo.FileSHAs {
+		if _, exists := allCurrentSHAs[path]; !exists {
+			delete(versionInfo.FileSHAs, path)
+		}
 	}
 
 	// Update version info
