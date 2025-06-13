@@ -21,9 +21,10 @@ type Alias struct {
 
 // MCPServer represents a configured MCP server with a name, description, and port
 type MCPServer struct {
-	Name        string `toml:"name"`
-	Description string `toml:"description"`
-	Port        int    `toml:"port"`
+	Name             string `toml:"name"`
+	Description      string `toml:"description"`
+	Port             int    `toml:"port"`
+	IsToolOutputJson bool   `toml:"is_tool_output_json,omitempty"`
 }
 
 type Project struct {

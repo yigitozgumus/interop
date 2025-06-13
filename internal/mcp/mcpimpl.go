@@ -25,7 +25,11 @@ type ToolOutput struct {
 }
 
 // formatToolOutput wraps the output text in the required JSON format
-func formatToolOutput(output string) string {
+func formatToolOutput(output string, isJson bool) string {
+	if !isJson {
+		return output
+	}
+
 	toolOutput := ToolOutput{
 		Type: "text",
 		Text: output,
@@ -42,15 +46,16 @@ func formatToolOutput(output string) string {
 
 // MCPLibServer represents the MCP server implementation using mark3labs/mcp-go
 type MCPLibServer struct {
-	mcpServer      *server.MCPServer
-	httpServer     *server.StreamableHTTPServer
-	port           int
-	configDir      string
-	logFile        *os.File
-	commandConfig  map[string]settings.CommandConfig
-	promptConfig   map[string]settings.PromptConfig
-	commandAliases map[string]string // Maps alias -> original command name
-	serverMode     string            // "stdio" or "sse"
+	mcpServer        *server.MCPServer
+	httpServer       *server.StreamableHTTPServer
+	port             int
+	configDir        string
+	logFile          *os.File
+	commandConfig    map[string]settings.CommandConfig
+	promptConfig     map[string]settings.PromptConfig
+	commandAliases   map[string]string // Maps alias -> original command name
+	serverMode       string            // "stdio" or "sse"
+	isToolOutputJson bool              // Whether to output tool results in JSON format
 }
 
 // sanitizeOutput ensures there are no ANSI color codes in the output
@@ -163,6 +168,14 @@ func NewMCPLibServer() (*MCPLibServer, error) {
 		serverTitle = fmt.Sprintf("Interop MCP Server - %s", serverName)
 	}
 
+	// Get server configuration if available
+	var isToolOutputJson bool
+	if serverName != "" {
+		if serverCfg, exists := cfg.MCPServers[serverName]; exists {
+			isToolOutputJson = serverCfg.IsToolOutputJson
+		}
+	}
+
 	mcpServer := server.NewMCPServer(
 		serverTitle,
 		"1.0.0",
@@ -172,15 +185,16 @@ func NewMCPLibServer() (*MCPLibServer, error) {
 	)
 
 	s := &MCPLibServer{
-		mcpServer:      mcpServer,
-		httpServer:     nil,
-		port:           port,
-		configDir:      configDir,
-		logFile:        logFile,
-		commandConfig:  cfg.Commands,
-		promptConfig:   cfg.Prompts,
-		commandAliases: make(map[string]string),
-		serverMode:     serverMode,
+		mcpServer:        mcpServer,
+		httpServer:       nil,
+		port:             port,
+		configDir:        configDir,
+		logFile:          logFile,
+		commandConfig:    cfg.Commands,
+		promptConfig:     cfg.Prompts,
+		commandAliases:   make(map[string]string),
+		serverMode:       serverMode,
+		isToolOutputJson: isToolOutputJson,
 	}
 
 	// Register tools based on available commands for this server
@@ -325,7 +339,7 @@ func (s *MCPLibServer) registerCommandTools(serverName string) {
 
 		// Format the output as JSON text
 		cmdJSON, _ := json.MarshalIndent(commands, "", "  ")
-		return mcp.NewToolResultText(formatToolOutput(sanitizeOutput(string(cmdJSON)))), nil
+		return mcp.NewToolResultText(formatToolOutput(sanitizeOutput(string(cmdJSON)), s.isToolOutputJson)), nil
 	})
 
 	s.logInfo("Registered MCP commands tool")
@@ -610,7 +624,7 @@ func (s *MCPLibServer) registerSingleCommandTool(name string, cmdConfig settings
 		}
 
 		// Return the sanitized result in JSON format
-		return mcp.NewToolResultText(formatToolOutput(sanitizeOutput(result))), nil
+		return mcp.NewToolResultText(formatToolOutput(sanitizeOutput(result), s.isToolOutputJson)), nil
 	})
 
 	s.logInfo("Registered MCP tool for command: %s", name)
