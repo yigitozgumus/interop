@@ -12,6 +12,7 @@ const (
 	colorRed    = "\033[31m"
 	colorYellow = "\033[33m"
 	colorGreen  = "\033[32m"
+	colorBlue   = "\033[34m"
 )
 
 // Level defines the minimum level of logs to output
@@ -113,6 +114,20 @@ func (l *Logger) Message(format string, args ...interface{}) {
 	}
 }
 
+// Info prints a blue info message to stdout (always visible, user-facing)
+func (l *Logger) Info(format string, args ...interface{}) {
+	if l.useColors {
+		fmt.Fprintf(os.Stdout, colorBlue+"Info: "+colorReset+format+"\n", args...)
+	} else {
+		fmt.Fprintf(os.Stdout, "Info: "+format+"\n", args...)
+	}
+}
+
+// Infof is an alias for Info (for printf-style naming)
+func (l *Logger) Infof(format string, args ...interface{}) {
+	l.Info(format, args...)
+}
+
 // Global functions that use the default logger
 
 // SetDefaultLevel updates the log level of the default logger
@@ -153,4 +168,13 @@ func Warning(format string, args ...interface{}) {
 // Message prints an informational message to stderr if log level permits
 func Message(format string, args ...interface{}) {
 	DefaultLogger.Message(format, args...)
+}
+
+// Global Info functions
+func Info(format string, args ...interface{}) {
+	DefaultLogger.Info(format, args...)
+}
+
+func Infof(format string, args ...interface{}) {
+	DefaultLogger.Info(format, args...)
 }

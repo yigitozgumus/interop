@@ -239,7 +239,7 @@ func (m *Manager) Add(name, url string) error {
 		return err
 	}
 
-	logging.Message("Added remote '%s' with URL: %s", name, url)
+	logging.Info("Added remote '%s' with URL: %s", name, url)
 	return nil
 }
 
@@ -278,7 +278,7 @@ func (m *Manager) Remove(name string) error {
 		logging.Warning("Failed to remove version info for remote '%s': %v", name, err)
 	}
 
-	logging.Message("Removed remote '%s'", name)
+	logging.Info("Removed remote '%s'", name)
 	return nil
 }
 
@@ -303,6 +303,7 @@ func (m *Manager) Show() error {
 		fmt.Println()
 		fmt.Println("Add a remote with:")
 		fmt.Println("  interop config remote add <name> <git-url>")
+		logging.Info("No remote repositories configured.")
 		return nil
 	}
 
@@ -361,6 +362,7 @@ func (m *Manager) Fetch(remoteName string) error {
 		logging.Message("Successfully fetched from remote '%s'", remote.Name)
 	}
 
+	logging.Info("Fetch operation completed.")
 	return nil
 }
 
@@ -840,7 +842,7 @@ func (m *Manager) Clear() error {
 	if removedItems == 0 {
 		logging.Message("No remote files to clear")
 	} else {
-		logging.Message("Successfully cleared %d remote items", removedItems)
+		logging.Info("Successfully cleared %d remote items", removedItems)
 	}
 
 	return nil

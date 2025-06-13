@@ -9,42 +9,48 @@ import (
 	"path/filepath"
 )
 
-// OpenSettings opens the settings file using the specified editor or defaults to $EDITOR environment variable
-// If editorName is empty, it will use the editor from $EDITOR environment variable or fall back to nano
-func OpenSettings(editorName string) error {
-	// Find the settings file path
+// OpenConfigFolder opens the entire interop config folder using the best available editor or file browser
+func OpenConfigFolder(editorName string) error {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		logging.ErrorAndExit("failed to get user home directory: %w", err)
 	}
 
-	// Build the path to the settings file using the current path configuration
-	config := filepath.Join(homeDir, settings.DefaultPathConfig.SettingsDir)
-	base := filepath.Join(config, settings.DefaultPathConfig.AppDir)
-	settingsPath := filepath.Join(base, settings.DefaultPathConfig.CfgFile)
+	// Path to the interop config folder
+	configDir := filepath.Join(homeDir, settings.DefaultPathConfig.SettingsDir, settings.DefaultPathConfig.AppDir)
 
-	// Determine which editor to use
-	var editor string
+	// Determine which editor or opener to use
+	var cmd *exec.Cmd
+
+	// 1. If user specified an editor, try to use it
 	if editorName != "" {
-		// Use the editor specified via the --editor flag
-		editor = editorName
-	} else {
-		// Fall back to the original behavior: check $EDITOR environment variable
-		editor = os.Getenv("EDITOR")
-		if editor == "" {
-			// Default to common editors if $EDITOR is not set
-			editor = "nano" // Simple default that's often available
+		if editorName == "code" {
+			cmd = exec.Command("code", configDir)
+		} else {
+			cmd = exec.Command(editorName, configDir)
 		}
+	} else if _, err := exec.LookPath("code"); err == nil {
+		// 2. Prefer VS Code if available
+		cmd = exec.Command("code", configDir)
+	} else if _, err := exec.LookPath("open"); err == nil {
+		// 3. macOS Finder
+		cmd = exec.Command("open", configDir)
+	} else if _, err := exec.LookPath("xdg-open"); err == nil {
+		// 4. Linux file browser
+		cmd = exec.Command("xdg-open", configDir)
+	} else {
+		// 5. Fallback: try $EDITOR or nano
+		editor := os.Getenv("EDITOR")
+		if editor == "" {
+			editor = "nano"
+		}
+		cmd = exec.Command(editor, configDir)
 	}
 
-	logging.Message(fmt.Sprintf("Opening settings file with %s: %s", editor, settingsPath))
-
-	// Create the command to open the editor
-	cmd := exec.Command(editor, settingsPath)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	// Run the editor
+	logging.Message(fmt.Sprintf("Opening config folder: %s", configDir))
 	return cmd.Run()
 }

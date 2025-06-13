@@ -131,18 +131,19 @@ func main() {
 	// Config edit command (moved from root level)
 	configEditCmd := &cobra.Command{
 		Use:   "edit",
-		Short: "Edit the configuration file with your default editor or specified editor",
-		Long:  "Edit the configuration file using the editor specified by --editor flag, $EDITOR environment variable, or nano as fallback",
+		Short: "Edit the configuration folder with your default editor or specified editor",
+		Long:  "Open the entire interop configuration folder using the editor specified by --editor flag, $EDITOR environment variable, VS Code, or your OS file browser as fallback.",
 		Run: func(cmd *cobra.Command, args []string) {
-			err := edit.OpenSettings(editorName)
+			err := edit.OpenConfigFolder(editorName)
 			if err != nil {
-				logging.ErrorAndExit(fmt.Sprintf("Failed to open settings file: %v", err))
+				logging.ErrorAndExit("Failed to open config folder: %v", err)
 			}
+			logging.Info("Config folder opened in your editor or file browser.")
 		},
 	}
 
 	// Add the --editor flag to the config edit command
-	configEditCmd.Flags().StringVar(&editorName, "editor", "", "Editor to use for opening the configuration file (e.g., code, vim, nano)")
+	configEditCmd.Flags().StringVar(&editorName, "editor", "", "Editor to use for opening the configuration folder (e.g., code, vim, nano)")
 	configCmd.AddCommand(configEditCmd)
 
 	// Add Remote command group under config
@@ -176,7 +177,7 @@ func main() {
 				logging.ErrorAndExit("Failed to add remote '%s': %v", name, err)
 			}
 
-			fmt.Printf("Successfully added remote '%s' with URL: %s\n", name, url)
+			logging.Info("Successfully added remote '%s' with URL: %s", name, url)
 		},
 	}
 	remoteCmd.AddCommand(remoteAddCmd)
@@ -198,7 +199,7 @@ func main() {
 				logging.ErrorAndExit("Failed to remove remote '%s': %v", name, err)
 			}
 
-			fmt.Printf("Successfully removed remote '%s'\n", name)
+			logging.Info("Successfully removed remote '%s'", name)
 		},
 	}
 	remoteCmd.AddCommand(remoteRemoveCmd)
@@ -235,9 +236,9 @@ func main() {
 			}
 
 			if remoteName != "" {
-				fmt.Printf("Successfully fetched from remote '%s'\n", remoteName)
+				logging.Info("Successfully fetched from remote '%s'", remoteName)
 			} else {
-				fmt.Println("Successfully fetched from all configured remotes")
+				logging.Info("Successfully fetched from all configured remotes")
 			}
 		},
 	}
@@ -254,7 +255,7 @@ func main() {
 				logging.ErrorAndExit("Failed to clear remote configuration: %v", err)
 			}
 
-			fmt.Println("Successfully cleared all remote configuration files and tracking information")
+			logging.Info("Successfully cleared all remote configuration files and tracking information")
 		},
 	}
 	remoteCmd.AddCommand(remoteClearCmd)
@@ -333,6 +334,7 @@ Examples:
 			if err := mcp.StartServer(serverName, startAllServers); err != nil {
 				logging.ErrorAndExit("Failed to start MCP server: %v", err)
 			}
+			logging.Info("MCP server(s) started.")
 		},
 	}
 	mcpStartCmd.Flags().BoolVarP(&startAllServers, "all", "a", false, "Start all MCP servers (default, not supported in stdio mode)")
@@ -364,6 +366,7 @@ Examples:
 			if err := mcp.StopServer(serverName, stopAllServers); err != nil {
 				logging.ErrorAndExit("Failed to stop MCP server: %v", err)
 			}
+			logging.Info("MCP server(s) stopped.")
 		},
 	}
 	mcpStopCmd.Flags().BoolVarP(&stopAllServers, "all", "a", false, "Stop all MCP servers (not supported in stdio mode)")
@@ -395,6 +398,7 @@ Examples:
 			if err := mcp.RestartServer(serverName, restartAllServers); err != nil {
 				logging.ErrorAndExit("Failed to restart MCP server: %v", err)
 			}
+			logging.Info("MCP server(s) restarted.")
 		},
 	}
 	mcpRestartCmd.Flags().BoolVarP(&restartAllServers, "all", "a", false, "Restart all MCP servers (not supported in stdio mode)")
@@ -472,6 +476,7 @@ Examples:
 				logging.ErrorAndExit("Failed to export MCP configuration: %v", err)
 			}
 			fmt.Println(result)
+			logging.Info("MCP configuration export complete.")
 		},
 	}
 	mcpExportCmd.Flags().String("mode", "sse", "Export mode (stdio or sse)")
@@ -581,6 +586,7 @@ Examples:
 				logging.ErrorAndExit("Failed to check port availability: %v", err)
 			}
 			fmt.Println(result)
+			logging.Info("Port check complete.")
 		},
 	}
 	mcpCmd.AddCommand(mcpPortCheckCmd)
@@ -651,6 +657,7 @@ Examples:
 			if severe {
 				os.Exit(1)
 			}
+			logging.Info("Validation complete.")
 		},
 	}
 
