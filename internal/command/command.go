@@ -67,6 +67,9 @@ func PrintCommandDetails(name string, cmd Command, projectAssociations map[strin
 
 	display.PrintCommandStatus(cmd.IsEnabled, execSource)
 
+	// Print source information
+	display.PrintCommandSource(name)
+
 	// Print project associations if any
 	projectNames, hasProjects := projectAssociations[name]
 	if hasProjects && len(projectNames) > 0 {
@@ -126,7 +129,6 @@ func ListWithProjects(commands map[string]Command, projectCommands map[string][]
 		PrintCommandDetails(name, cmd, commandProjects)
 	}
 }
-
 
 // RunWithSearchPathsAndArgs executes a command by name with arguments, searching for executables in multiple paths
 func RunWithSearchPathsAndArgs(commands map[string]Command, commandName string, executableSearchPaths []string, args []string, projectPath ...string) error {

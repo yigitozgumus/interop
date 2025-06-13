@@ -73,6 +73,14 @@ func PrintCommandDescription(description string) {
 	}
 }
 
+// PrintCommandSource prints the source information for a command
+func PrintCommandSource(name string) {
+	sourceInfo := determineCommandSource(name)
+	if sourceInfo != "" {
+		fmt.Printf("   %s\n", sourceInfo)
+	}
+}
+
 // PrintProjectCommands prints the commands for a project
 func PrintProjectCommands(commandName, alias, description string) {
 	if alias != "" {
