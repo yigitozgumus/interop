@@ -22,6 +22,7 @@ const (
 	RemoteSymbol           = "☁️"
 	LocalSymbol            = "🏠"
 	ConflictSymbol         = "⚠️"
+	OverrideSymbol         = "☁️🏠"
 )
 
 // PrintCommandGraph displays a visual graph of commands and their relationships
@@ -242,26 +243,29 @@ func determineCommandSource(cmdName string) string {
 
 	configDir := filepath.Join(homeDir, ".config", "interop")
 
-	// Check if command might be from remote
 	remoteConfigDir := filepath.Join(configDir, "config.d.remote")
 	localConfigDir := filepath.Join(configDir, "config.d")
 
-	// Check if we can find the command file in either directory
-	if _, err := os.Stat(remoteConfigDir); err == nil {
-		// Look for command files in remote directory
-		if found := findCommandInDir(remoteConfigDir, cmdName); found {
-			return fmt.Sprintf("(%s Remote)", RemoteSymbol)
-		}
-	}
+	localHas := false
+	remoteHas := false
 
 	if _, err := os.Stat(localConfigDir); err == nil {
-		// Look for command files in local directory
-		if found := findCommandInDir(localConfigDir, cmdName); found {
-			return fmt.Sprintf("(%s Local)", LocalSymbol)
-		}
+		localHas = findCommandInDir(localConfigDir, cmdName)
+	}
+	if _, err := os.Stat(remoteConfigDir); err == nil {
+		remoteHas = findCommandInDir(remoteConfigDir, cmdName)
 	}
 
-	// Check main settings file
+	if localHas && remoteHas {
+		return "(☁️ Remote, but 🏠 Local override)"
+	}
+	if localHas {
+		return fmt.Sprintf("(%s Local)", LocalSymbol)
+	}
+	if remoteHas {
+		return fmt.Sprintf("(%s Remote)", RemoteSymbol)
+	}
+
 	mainSettingsPath := filepath.Join(configDir, "settings.toml")
 	if found := findCommandInMainSettings(mainSettingsPath, cmdName); found {
 		return fmt.Sprintf("(%s Main Settings)", LocalSymbol)
@@ -320,6 +324,7 @@ func printLegend() {
 	fmt.Printf("%s MCP Server Association\n", MCPServerSymbol)
 	fmt.Printf("%s Local Configuration\n", LocalSymbol)
 	fmt.Printf("%s Remote Configuration\n", RemoteSymbol)
+	fmt.Printf("%s Remote, but Local override\n", OverrideSymbol)
 	fmt.Printf("%s Warning/Conflict\n", ConflictSymbol)
 	fmt.Println(ExecutableCommandLabel, "- Executable command")
 	fmt.Println(ShellCommandLabel, "- Shell command")
