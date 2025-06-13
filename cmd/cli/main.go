@@ -36,6 +36,7 @@ func main() {
 		Use:     "interop",
 		Short:   "Interop - Project management CLI",
 		Version: getVersionInfo(),
+		Aliases: []string{"i"},
 		Run: func(cmd *cobra.Command, args []string) {
 			cmd.Help()
 		},
@@ -43,8 +44,9 @@ func main() {
 
 	// Projects command that shows all projects and their commands
 	projectsCmd := &cobra.Command{
-		Use:   "projects",
-		Short: "List all configured projects with their commands",
+		Use:     "projects",
+		Short:   "List all configured projects with their commands",
+		Aliases: []string{"p", "proj"},
 		Run: func(cmd *cobra.Command, args []string) {
 			// Reload configuration fresh to ensure remote configs are included
 			freshCfg, err := settings.Load()
@@ -59,8 +61,9 @@ func main() {
 
 	// Commands command that lists all commands
 	commandsCmd := &cobra.Command{
-		Use:   "commands",
-		Short: "List all configured commands",
+		Use:     "commands",
+		Short:   "List all configured commands",
+		Aliases: []string{"c", "cmd", "cmds"},
 		Run: func(cmd *cobra.Command, args []string) {
 			// Reload configuration fresh to ensure remote configs are included
 			freshCfg, err := settings.Load()
@@ -99,9 +102,10 @@ func main() {
 
 	// New run command that supports both command names and aliases
 	runCmd := &cobra.Command{
-		Use:   "run [command-or-alias] [args...]",
-		Short: "Execute a command by name or alias with optional arguments",
-		Args:  cobra.MinimumNArgs(1),
+		Use:     "run [command-or-alias] [args...]",
+		Short:   "Execute a command by name or alias with optional arguments",
+		Aliases: []string{"r", "exec"},
+		Args:    cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			commandOrAlias := args[0]
 			commandArgs := args[1:]
@@ -113,13 +117,13 @@ func main() {
 			}
 		},
 	}
-
-	rootCmd.AddCommand(runCmd) // Add run as a top-level command for easier access
+	rootCmd.AddCommand(runCmd)
 
 	// Add Config command group
 	configCmd := &cobra.Command{
-		Use:   "config",
-		Short: "Manage configuration settings",
+		Use:     "config",
+		Short:   "Manage configuration settings",
+		Aliases: []string{"cfg"},
 		Run: func(cmd *cobra.Command, args []string) {
 			cmd.Help()
 		},
@@ -130,9 +134,10 @@ func main() {
 
 	// Config edit command (moved from root level)
 	configEditCmd := &cobra.Command{
-		Use:   "edit",
-		Short: "Edit the configuration folder with your default editor or specified editor",
-		Long:  "Open the entire interop configuration folder using the editor specified by --editor flag, $EDITOR environment variable, VS Code, or your OS file browser as fallback.",
+		Use:     "edit",
+		Short:   "Edit the configuration folder with your default editor or specified editor",
+		Long:    "Open the entire interop configuration folder using the editor specified by --editor flag, $EDITOR environment variable, VS Code, or your OS file browser as fallback.",
+		Aliases: []string{"e"},
 		Run: func(cmd *cobra.Command, args []string) {
 			err := edit.OpenConfigFolder(editorName)
 			if err != nil {
@@ -148,8 +153,9 @@ func main() {
 
 	// Add Remote command group under config
 	remoteCmd := &cobra.Command{
-		Use:   "remote",
-		Short: "Manage remote configuration",
+		Use:     "remote",
+		Short:   "Manage remote configuration",
+		Aliases: []string{"rem"},
 		Run: func(cmd *cobra.Command, args []string) {
 			cmd.Help()
 		},
@@ -157,10 +163,11 @@ func main() {
 
 	// Remote add command
 	remoteAddCmd := &cobra.Command{
-		Use:   "add <name> <url>",
-		Short: "Add a named remote repository",
-		Long:  "Add a named remote Git repository that will be used for managing multiple config files and executables",
-		Args:  cobra.ExactArgs(2),
+		Use:     "add <n> <url>",
+		Short:   "Add a named remote repository",
+		Long:    "Add a named remote Git repository that will be used for managing multiple config files and executables",
+		Aliases: []string{"a"},
+		Args:    cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
 			name := args[0]
 			url := args[1]
@@ -184,10 +191,11 @@ func main() {
 
 	// Remote remove command
 	remoteRemoveCmd := &cobra.Command{
-		Use:   "remove <name>",
-		Short: "Remove a named remote repository",
-		Long:  "Remove a named remote repository from the configuration",
-		Args:  cobra.ExactArgs(1),
+		Use:     "remove <n>",
+		Short:   "Remove a named remote repository",
+		Long:    "Remove a named remote repository from the configuration",
+		Aliases: []string{"rm", "delete", "del"},
+		Args:    cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			name := args[0]
 			if name == "" {
@@ -206,9 +214,10 @@ func main() {
 
 	// Remote show command
 	remoteShowCmd := &cobra.Command{
-		Use:   "show",
-		Short: "Show all configured remote repositories",
-		Long:  "Display all configured remote repositories with their URLs and status",
+		Use:     "show",
+		Short:   "Show all configured remote repositories",
+		Long:    "Display all configured remote repositories with their URLs and status",
+		Aliases: []string{"ls", "list"},
 		Run: func(cmd *cobra.Command, args []string) {
 			remoteMgr := remote.NewManager()
 			if err := remoteMgr.Show(); err != nil {
@@ -220,10 +229,11 @@ func main() {
 
 	// Remote fetch command
 	remoteFetchCmd := &cobra.Command{
-		Use:   "fetch [name]",
-		Short: "Fetch configuration from remote repositories",
-		Long:  "Fetch configuration files and executables from all configured remote Git repositories or a specific named remote. This will clone the repositories, validate their structure, and sync files to local remote directories.",
-		Args:  cobra.MaximumNArgs(1),
+		Use:     "fetch [name]",
+		Short:   "Fetch configuration from remote repositories",
+		Long:    "Fetch configuration files and executables from all configured remote Git repositories or a specific named remote. This will clone the repositories, validate their structure, and sync files to local remote directories.",
+		Aliases: []string{"f", "sync"},
+		Args:    cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			var remoteName string
 			if len(args) > 0 {
@@ -594,10 +604,11 @@ Examples:
 	// Add MCP command group to root command
 	rootCmd.AddCommand(mcpCmd)
 
-	// Add validation command to check configuration
+	// Add validate command to check configuration
 	validateCmd := &cobra.Command{
-		Use:   "validate",
-		Short: "Validate the configuration file",
+		Use:     "validate",
+		Short:   "Validate the configuration file",
+		Aliases: []string{"v", "check"},
 		Run: func(cmd *cobra.Command, args []string) {
 			// Reload configuration fresh to ensure remote configs are included
 			freshCfg, err := settings.Load()
