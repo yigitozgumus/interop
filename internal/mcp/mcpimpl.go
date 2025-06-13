@@ -500,7 +500,7 @@ func (s *MCPLibServer) registerSingleCommandTool(name string, cmdConfig settings
 	// Add project_path parameter for global commands
 	if isGlobalCommand {
 		toolOptions = append(toolOptions,
-			mcp.WithString("project_path", mcp.Description("Optional path to project directory where the command should be executed. If provided, the command will run in this directory context, similar to project-bound commands.")),
+			mcp.WithString("project_path", mcp.Description("Path to project directory where the command should be executed. Required for global commands to provide project context."), mcp.Required()),
 		)
 	}
 
