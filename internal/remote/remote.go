@@ -834,19 +834,6 @@ func (m *Manager) Clear() error {
 		}
 	}
 
-	// Clear the remote configuration (remove all remotes)
-	if err := m.EnsureRemoteConfig(); err != nil {
-		return err
-	}
-
-	emptyConfig := &RemoteConfig{
-		Remotes: []RemoteEntry{},
-	}
-
-	if err := m.saveRemoteConfig(emptyConfig); err != nil {
-		return fmt.Errorf("failed to clear remote configuration: %w", err)
-	}
-
 	if removedItems == 0 {
 		logging.Message("No remote files to clear")
 	} else {
