@@ -12,6 +12,7 @@
 #   "~/bin"
 # ]
 # mcp_port = 8081               # Default port for the main MCP server
+# is_tool_output_json = false   # Whether default MCP server outputs JSON format (default: false)
 
 # Global environment variables (lowest priority, applied to all commands)
 # env = { LOG_LEVEL = "info", NODE_ENV = "development" }
@@ -24,6 +25,7 @@
 #name = "example"               # Unique name for this MCP server (must match the key)
 #description = "Example domain-specific server"
 #port = 8082                    # Port for this MCP server
+#is_tool_output_json = true     # Whether this server outputs JSON format (default: false)
 
 # =====================
 # MCP PROMPTS

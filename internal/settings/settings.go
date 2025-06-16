@@ -317,6 +317,7 @@ type Settings struct {
 	CommandDirs           []string                 `toml:"command_dirs"` // Directories to load additional command files from
 	MCPPort               int                      `toml:"mcp_port"`
 	MCPServers            map[string]MCPServer     `toml:"mcp_servers"`
+	IsToolOutputJson      bool                     `toml:"is_tool_output_json,omitempty"` // Whether default MCP server outputs JSON format
 }
 
 // PathConfig defines the directory structure for settings
@@ -376,6 +377,7 @@ var defaultSettingsTemplate = `# Interop Settings Template
 #   "~/projects/shared/interop-configs"
 # ]
 # mcp_port = 8081               # Default port for the main MCP server
+# is_tool_output_json = false   # Whether default MCP server outputs JSON format (default: false)
 
 # =====================
 # MCP SERVER CONFIGURATION
@@ -836,6 +838,7 @@ func mergeConfig(mainSettings *Settings, commandDirs []string) (*Settings, []str
 		CommandDirs:           mainSettings.CommandDirs,
 		MCPPort:               mainSettings.MCPPort,
 		MCPServers:            make(map[string]MCPServer),
+		IsToolOutputJson:      mainSettings.IsToolOutputJson,
 	}
 
 	var conflicts []string

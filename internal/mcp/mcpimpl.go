@@ -174,6 +174,9 @@ func NewMCPLibServer() (*MCPLibServer, error) {
 		if serverCfg, exists := cfg.MCPServers[serverName]; exists {
 			isToolOutputJson = serverCfg.IsToolOutputJson
 		}
+	} else {
+		// For default server, use the global setting
+		isToolOutputJson = cfg.IsToolOutputJson
 	}
 
 	mcpServer := server.NewMCPServer(
