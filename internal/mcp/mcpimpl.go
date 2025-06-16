@@ -860,6 +860,9 @@ func (s *MCPLibServer) executeCommandWithPath(name, cmdStr string, args map[stri
 
 	s.logInfo("Executing command: %s (%s)", originalName, processedCmd)
 
+	// Track execution time
+	startTime := time.Now()
+
 	// Create a temporary file for output
 	tmpDir, err := os.MkdirTemp(s.configDir, "cmd-output-*")
 	if err != nil {
@@ -889,12 +892,24 @@ func (s *MCPLibServer) executeCommandWithPath(name, cmdStr string, args map[stri
 	cmd.Stdout = outFile
 	cmd.Stderr = outFile
 
+	// Add timeout context to prevent hanging commands
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	// Use CommandContext instead of Command for timeout support
+	cmd = exec.CommandContext(ctx, "sh", "-c", executeCmd)
+	cmd.Stdout = outFile
+	cmd.Stderr = outFile
+
 	err = cmd.Run()
+	executionTime := time.Since(startTime)
+
 	if err != nil {
 		// Still read output even if command failed
 		outFile.Seek(0, 0)
 		output, _ := os.ReadFile(outputFile)
 
+		s.logInfo("Command %s failed after %v: %v", originalName, executionTime, err)
 		// Make sure to sanitize the output to remove any ANSI color codes
 		return sanitizeOutput(fmt.Sprintf("Command failed: %v\nOutput:\n%s", err, string(output))), err
 	}
@@ -903,8 +918,11 @@ func (s *MCPLibServer) executeCommandWithPath(name, cmdStr string, args map[stri
 	outFile.Seek(0, 0)
 	output, err := os.ReadFile(outputFile)
 	if err != nil {
+		s.logInfo("Command %s completed after %v but failed to read output: %v", originalName, executionTime, err)
 		return "", fmt.Errorf("failed to read command output: %w", err)
 	}
+
+	s.logInfo("Command %s completed successfully after %v (output length: %d bytes)", originalName, executionTime, len(output))
 
 	// Return sanitized output
 	return sanitizeOutput(string(output)), nil
