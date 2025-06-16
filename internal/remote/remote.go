@@ -448,6 +448,11 @@ func (m *Manager) fetchFromRemote(remote RemoteEntry) error {
 			return fmt.Errorf("failed to sync executables directory: %w", err)
 		}
 
+		// Make all files in executables.remote executable
+		if err := m.makeExecutablesExecutable(remoteExecutablesDir); err != nil {
+			logging.Warning("Failed to make executables executable: %v", err)
+		}
+
 		if err := m.updateSHAsForDirectory(remoteExecutablesDir, newSHAs, "executables"); err != nil {
 			return fmt.Errorf("failed to update SHAs for executables directory: %w", err)
 		}
@@ -957,6 +962,45 @@ func (m *Manager) updateSHAsForDirectory(dirPath string, shas map[string]string,
 		}
 
 		shas[key] = sha
+		return nil
+	})
+}
+
+// makeExecutablesExecutable recursively makes all files in the executables directory executable
+func (m *Manager) makeExecutablesExecutable(executablesDir string) error {
+	return filepath.Walk(executablesDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip directories
+		if info.IsDir() {
+			return nil
+		}
+
+		// Get current permissions
+		currentMode := info.Mode()
+
+		// Add execute permissions for owner, group, and others if they have read permissions
+		newMode := currentMode
+		if currentMode&0400 != 0 { // If owner has read permission, add execute
+			newMode |= 0100
+		}
+		if currentMode&0040 != 0 { // If group has read permission, add execute
+			newMode |= 0010
+		}
+		if currentMode&0004 != 0 { // If others have read permission, add execute
+			newMode |= 0001
+		}
+
+		// Only change permissions if they need to be changed
+		if newMode != currentMode {
+			if err := os.Chmod(path, newMode); err != nil {
+				return fmt.Errorf("failed to make file executable %s: %w", path, err)
+			}
+			logging.Message("Made executable: %s", path)
+		}
+
 		return nil
 	})
 }
