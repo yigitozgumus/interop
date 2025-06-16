@@ -684,6 +684,53 @@ func (s *MCPLibServer) executeCommandWithPath(name, cmdStr string, args map[stri
 	// Create a copy of the command string for substitution
 	processedCmd := cmdStr
 
+	// For executable commands, resolve the full path to the executable
+	if cmdConfig.IsExecutable {
+		// Get executable search paths
+		cfg, err := settings.Load()
+		if err != nil {
+			return "", fmt.Errorf("failed to load settings for executable search paths: %w", err)
+		}
+
+		executableSearchPaths, err := settings.GetExecutableSearchPaths(cfg)
+		if err != nil {
+			return "", fmt.Errorf("failed to get executable search paths: %w", err)
+		}
+
+		// Split command and arguments
+		cmdParts := strings.Fields(cmdStr)
+		if len(cmdParts) == 0 {
+			return "", fmt.Errorf("empty command provided")
+		}
+
+		execName := cmdParts[0]
+		cmdArgs := cmdParts[1:]
+
+		// Find the executable in search paths
+		var execPath string
+		for _, dir := range executableSearchPaths {
+			path := filepath.Join(dir, execName)
+			s.logInfo("Checking path: %s", path)
+			if _, err := os.Stat(path); err == nil {
+				execPath = path
+				break
+			}
+		}
+		s.logInfo("Executable path: %s", execPath)
+
+		if execPath == "" {
+			return "", fmt.Errorf("executable '%s' not found in search paths", execName)
+		}
+
+		// Reconstruct the command with the full path
+		if len(cmdArgs) > 0 {
+			processedCmd = fmt.Sprintf("%s %s", execPath, strings.Join(cmdArgs, " "))
+		} else {
+			processedCmd = execPath
+		}
+		s.logInfo("Resolved executable command: %s", processedCmd)
+	}
+
 	// Check if command has a project context
 	var projectPathUsed string
 
