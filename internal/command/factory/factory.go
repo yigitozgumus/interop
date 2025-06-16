@@ -321,6 +321,89 @@ func (c *Command) RunWithArgs(args []string) error {
 
 			// If we have any arguments to process
 			if len(argsMap) > 0 {
+				// Handle executable commands with placeholder substitution
+				if c.Type == ExecutableCommand {
+					// For executable commands, we need to handle placeholder substitution in the Args
+					var processedArgs []string
+					var prefixedArgs []string
+					var positionalArgs []string
+
+					// Process each existing argument in cmd.Args for placeholder substitution
+					for _, cmdArg := range cmd.Args {
+						processedArg := cmdArg
+						// Replace placeholders in the argument
+						for argName, argValue := range argsMap {
+							placeholder := "${" + argName + "}"
+							if strings.Contains(processedArg, placeholder) {
+								processedArg = strings.ReplaceAll(processedArg, placeholder, argValue)
+								logging.Message("Replaced placeholder %s with value: %s in arg: %s", placeholder, argValue, processedArg)
+							}
+						}
+						processedArgs = append(processedArgs, processedArg)
+					}
+
+					// Process argument definitions for prefixed and positional arguments
+					for _, argDef := range cmdConfig.Arguments {
+						if value, ok := argsMap[argDef.Name]; ok {
+							if argDef.Prefix != "" {
+								// For arguments with prefixes
+								if argDef.Type == settings.ArgumentTypeBool {
+									if value == "true" {
+										prefixedArgs = append(prefixedArgs, argDef.Prefix)
+									}
+								} else {
+									// For other types, add both prefix and value
+									prefixedArgs = append(prefixedArgs, argDef.Prefix, value)
+								}
+							} else {
+								// For arguments without prefixes, check if they weren't already substituted
+								placeholder := "${" + argDef.Name + "}"
+								alreadySubstituted := false
+								for _, cmdArg := range cmd.Args {
+									if strings.Contains(cmdArg, placeholder) {
+										alreadySubstituted = true
+										break
+									}
+								}
+								if !alreadySubstituted {
+									// Add as positional argument
+									positionalArgs = append(positionalArgs, value)
+								}
+							}
+						}
+					}
+
+					// Combine processed args with new arguments
+					cmd.Args = processedArgs
+					if len(positionalArgs) > 0 {
+						cmd.Args = append(cmd.Args, positionalArgs...)
+					}
+					if len(prefixedArgs) > 0 {
+						cmd.Args = append(cmd.Args, prefixedArgs...)
+					}
+
+					logging.Message("Executing command: %s %s", cmd.Path, strings.Join(cmd.Args, " "))
+
+					// We've handled the arguments, execute the main command
+					mainCmdErr := execution.NewExecutor().Execute(cmd)
+
+					// Execute post-execution hooks (regardless of main command success/failure)
+					if len(c.PostExec) > 0 {
+						logging.Message("Executing %d post-execution hook(s)", len(c.PostExec))
+						for i, hookCmd := range c.PostExec {
+							logging.Message("Running post-exec hook %d: %s", i+1, hookCmd)
+							if hookErr := c.executeHookCommand(hookCmd); hookErr != nil {
+								logging.Error("Post-execution hook %d failed: %v", i+1, hookErr)
+								// Continue with other post-exec hooks even if one fails
+							}
+						}
+						logging.Message("All post-execution hooks completed")
+					}
+
+					// Return the error from the main command (if any)
+					return mainCmdErr
+				}
+
 				// For shell commands, we'll construct a new command string with prefixes
 				if c.Type == ShellCommand && len(cmd.Args) >= 2 {
 					baseCmd := cmd.Args[1]
