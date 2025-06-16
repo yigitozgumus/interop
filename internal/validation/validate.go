@@ -180,37 +180,53 @@ func ValidateCommands(cfg *settings.Settings) []ValidationError {
 		}
 	}
 
+	// Get the configured executable search paths (including executables.remote)
+	executableSearchPaths, err := settings.GetExecutableSearchPaths(cfg)
+	if err != nil {
+		errors = append(errors, ValidationError{
+			Message: fmt.Sprintf("Failed to get executable search paths: %v", err),
+			Severe:  false,
+		})
+		// Fallback to system PATH only if we can't get configured paths
+		executableSearchPaths = []string{}
+	}
+
 	// Check executable commands for proper permissions
-	for _, cmd := range cfg.Commands {
+	for cmdName, cmd := range cfg.Commands {
 		if cmd.IsExecutable {
 			// Extract just the command name (first part before whitespace)
-			cmdName := strings.Fields(cmd.Cmd)[0]
+			execName := strings.Fields(cmd.Cmd)[0]
 
-			// Try to find the executable in various paths
-			// First try PATH environment
-			execPath, err := exec.LookPath(cmdName)
-			if err != nil {
-				// If not found in PATH, check in common executable locations
-				execDirs := []string{"/usr/bin", "/usr/local/bin", "/bin", "/opt/bin"}
-				found := false
+			// Try to find the executable using the same logic as execution
+			var execPath string
+			var found bool
 
-				for _, dir := range execDirs {
-					potentialPath := filepath.Join(dir, cmdName)
-					isExec, err := isFileExecutable(potentialPath)
-					if err == nil && isExec {
-						execPath = potentialPath
+			// First check configured search paths (including executables.remote)
+			for _, searchPath := range executableSearchPaths {
+				candidatePath := filepath.Join(searchPath, execName)
+				if isExec, err := isFileExecutable(candidatePath); err == nil && isExec {
+					execPath = candidatePath
+					found = true
+					break
+				}
+			}
+
+			// If not found in configured paths, try system PATH
+			if !found {
+				if systemPath, err := exec.LookPath(execName); err == nil {
+					if isExec, err := isFileExecutable(systemPath); err == nil && isExec {
+						execPath = systemPath
 						found = true
-						break
 					}
 				}
+			}
 
-				if !found {
-					errors = append(errors, ValidationError{
-						Message: fmt.Sprintf("Executable command '%s' not found in PATH or common executable directories", cmdName),
-						Severe:  false,
-					})
-					continue
-				}
+			if !found {
+				errors = append(errors, ValidationError{
+					Message: fmt.Sprintf("Executable command '%s' not found in configured search paths or system PATH", cmdName),
+					Severe:  false,
+				})
+				continue
 			}
 
 			// Check if found file has executable permissions
