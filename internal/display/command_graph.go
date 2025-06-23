@@ -200,11 +200,6 @@ func printCommands(cfg *settings.Settings, projectBoundCommands map[string][]str
 		// Print the command details with source information
 		fmt.Printf("%s %s %s %s %s\n", typeSymbol, enabledSymbol, cmdName, execType, sourceInfo)
 
-		// Print description if available
-		if cmdConfig.Description != "" {
-			fmt.Printf("   └─ %s\n", cmdConfig.Description)
-		}
-
 		// Print MCP server assignment if available
 		if cmdConfig.MCP != "" {
 			// Get server details
