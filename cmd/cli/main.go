@@ -10,6 +10,7 @@ import (
 	projectPkg "interop/internal/project"
 	"interop/internal/remote"
 	"interop/internal/settings"
+	"interop/internal/tui"
 	"interop/internal/validation"
 	"interop/internal/validation/project"
 	"log"
@@ -17,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
 
@@ -60,15 +62,28 @@ func main() {
 	rootCmd.AddCommand(projectsCmd)
 
 	// Commands command that lists all commands
+	var useTUI bool
 	commandsCmd := &cobra.Command{
 		Use:     "commands",
 		Short:   "List all configured commands",
 		Aliases: []string{"c", "cmd", "cmds"},
+		Long:    "List all configured commands. Use --tui flag to open an interactive terminal interface.",
 		Run: func(cmd *cobra.Command, args []string) {
 			// Reload configuration fresh to ensure remote configs are included
 			freshCfg, err := settings.Load()
 			if err != nil {
 				logging.ErrorAndExit("Failed to reload configuration: %v", err)
+			}
+
+			if useTUI {
+				// Run TUI
+				model := tui.NewCommandsModel(freshCfg)
+				p := tea.NewProgram(model, tea.WithAltScreen())
+
+				if _, err := p.Run(); err != nil {
+					logging.ErrorAndExit("Error running TUI: %v", err)
+				}
+				return
 			}
 
 			// Convert freshCfg.Commands to the expected format for command.ListWithProjects
@@ -98,6 +113,7 @@ func main() {
 			command.ListWithProjects(commands, projectCommands)
 		},
 	}
+	commandsCmd.Flags().BoolVar(&useTUI, "tui", false, "Use interactive terminal interface")
 	rootCmd.AddCommand(commandsCmd)
 
 	// New run command that supports both command names and aliases
