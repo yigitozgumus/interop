@@ -49,6 +49,8 @@ type CommandItem struct {
 	isExecutable bool
 	arguments    []settings.CommandArgument
 	examples     []settings.CommandExample
+	preExec      []string
+	postExec     []string
 }
 
 func (i CommandItem) FilterValue() string { return i.name }
@@ -136,6 +138,8 @@ func NewCommandsModel(cfg *settings.Settings) Model {
 			isExecutable: cmd.IsExecutable,
 			arguments:    cmd.Arguments,
 			examples:     cmd.Examples,
+			preExec:      cmd.PreExec,
+			postExec:     cmd.PostExec,
 		}
 		items = append(items, item)
 	}
@@ -436,6 +440,40 @@ func (m *Model) updateDetailView() {
 			content.WriteString(codeStyle.Render(fmt.Sprintf("    %s", example.Command)))
 			content.WriteString("\n\n")
 		}
+	}
+
+	// Pre-execution hooks
+	if len(cmd.preExec) > 0 {
+		sectionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
+		content.WriteString(sectionStyle.Render("Pre-execution hooks:"))
+		content.WriteString("\n")
+		hookStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("252")).
+			Background(lipgloss.Color("236")).
+			Padding(0, 1)
+		for i, hook := range cmd.preExec {
+			content.WriteString(fmt.Sprintf("  %d. ", i+1))
+			content.WriteString(hookStyle.Render(hook))
+			content.WriteString("\n")
+		}
+		content.WriteString("\n")
+	}
+
+	// Post-execution hooks
+	if len(cmd.postExec) > 0 {
+		sectionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
+		content.WriteString(sectionStyle.Render("Post-execution hooks:"))
+		content.WriteString("\n")
+		hookStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("252")).
+			Background(lipgloss.Color("236")).
+			Padding(0, 1)
+		for i, hook := range cmd.postExec {
+			content.WriteString(fmt.Sprintf("  %d. ", i+1))
+			content.WriteString(hookStyle.Render(hook))
+			content.WriteString("\n")
+		}
+		content.WriteString("\n")
 	}
 
 	// Command content
