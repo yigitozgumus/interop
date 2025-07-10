@@ -5,7 +5,22 @@ const path = require("path");
 const https = require("https");
 const { getPlatformInfo, getDownloadUrl } = require("../lib/platform");
 
-const BINARY_DIR = path.join(__dirname, "..", "bin");
+// Conditionally load optional dependencies
+let tar, AdmZip;
+try {
+  tar = require("tar");
+} catch (e) {
+  // Will be loaded dynamically when needed
+}
+try {
+  AdmZip = require("adm-zip");
+} catch (e) {
+  // Will be loaded dynamically when needed
+}
+
+// Use a system cache directory for the binary to avoid accidental commits
+const os = require("os");
+const BINARY_DIR = path.join(os.homedir(), ".cache", "interop-mcp-server", "bin");
 const DOWNLOAD_TIMEOUT = 30000; // 30 seconds
 
 /**
@@ -23,13 +38,17 @@ function downloadFile(url, dest) {
       // Handle redirects
       if (response.statusCode === 302 || response.statusCode === 301) {
         file.close();
-        fs.unlinkSync(dest);
+        if (fs.existsSync(dest)) {
+          fs.unlinkSync(dest);
+        }
         return downloadFile(response.headers.location, dest).then(resolve).catch(reject);
       }
 
       if (response.statusCode !== 200) {
         file.close();
-        fs.unlinkSync(dest);
+        if (fs.existsSync(dest)) {
+          fs.unlinkSync(dest);
+        }
         return reject(
           new Error(`Failed to download: ${response.statusCode} ${response.statusMessage}`)
         );
@@ -49,28 +68,35 @@ function downloadFile(url, dest) {
       response.pipe(file);
 
       file.on("finish", () => {
-        file.close();
-        console.log("\nDownload completed successfully!");
-        resolve();
+        file.close(() => {
+          console.log("\nDownload completed successfully!");
+          resolve();
+        });
       });
 
       file.on("error", (err) => {
         file.close();
-        fs.unlinkSync(dest);
+        if (fs.existsSync(dest)) {
+          fs.unlinkSync(dest);
+        }
         reject(err);
       });
     });
 
     request.on("error", (err) => {
       file.close();
-      fs.unlinkSync(dest);
+      if (fs.existsSync(dest)) {
+        fs.unlinkSync(dest);
+      }
       reject(err);
     });
 
     request.setTimeout(DOWNLOAD_TIMEOUT, () => {
       request.abort();
       file.close();
-      fs.unlinkSync(dest);
+      if (fs.existsSync(dest)) {
+        fs.unlinkSync(dest);
+      }
       reject(new Error("Download timeout"));
     });
   });
@@ -83,7 +109,13 @@ function downloadFile(url, dest) {
  * @returns {Promise<void>}
  */
 async function extractTarGz(archivePath, extractDir) {
-  const tar = require("tar");
+  if (!tar) {
+    try {
+      tar = require("tar");
+    } catch (e) {
+      throw new Error("tar dependency not available. Please install it with: npm install tar");
+    }
+  }
 
   console.log("Extracting archive...");
   await tar.extract({
@@ -102,7 +134,15 @@ async function extractTarGz(archivePath, extractDir) {
  * @returns {Promise<void>}
  */
 async function extractZip(archivePath, extractDir) {
-  const AdmZip = require("adm-zip");
+  if (!AdmZip) {
+    try {
+      AdmZip = require("adm-zip");
+    } catch (e) {
+      throw new Error(
+        "adm-zip dependency not available. Please install it with: npm install adm-zip"
+      );
+    }
+  }
 
   console.log("Extracting archive...");
   const zip = new AdmZip(archivePath);
@@ -151,6 +191,11 @@ async function install() {
 
     await downloadFile(downloadUrl, archivePath);
 
+    // Verify the archive was downloaded
+    if (!fs.existsSync(archivePath)) {
+      throw new Error("Archive download failed - file not found");
+    }
+
     // Extract the archive
     if (platformInfo.isWindows) {
       await extractZip(archivePath, BINARY_DIR);
@@ -158,11 +203,22 @@ async function install() {
       await extractTarGz(archivePath, BINARY_DIR);
     }
 
+    // Verify the binary was extracted
+    if (!fs.existsSync(binaryPath)) {
+      throw new Error(`Binary extraction failed - ${platformInfo.binaryName} not found`);
+    }
+
     // Make binary executable
     makeExecutable(binaryPath);
 
-    // Clean up archive
-    fs.unlinkSync(archivePath);
+    // Clean up archive (with error handling)
+    try {
+      if (fs.existsSync(archivePath)) {
+        fs.unlinkSync(archivePath);
+      }
+    } catch (cleanupError) {
+      console.log("Note: Could not clean up archive file (this is not critical)");
+    }
 
     console.log("✅ interop-mcp-server binary installed successfully!");
     console.log(`Binary location: ${binaryPath}`);

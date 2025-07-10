@@ -5,7 +5,9 @@ const path = require("path");
 const { spawn } = require("child_process");
 const { getPlatformInfo } = require("../lib/platform");
 
-const BINARY_DIR = path.join(__dirname);
+// Look for binary in system cache directory
+const os = require("os");
+const BINARY_DIR = path.join(os.homedir(), ".cache", "interop-mcp-server", "bin");
 const PACKAGE_JSON = require("../package.json");
 
 /**
@@ -27,6 +29,7 @@ OPTIONS:
   --remote <url>      Load commands from remote Git repository
   --config            Show MCP configuration for Claude Desktop
   --test              Test the MCP server connection
+  --install           Manually install the binary
 
 EXAMPLES:
   # Start default MCP server in stdio mode (most common)
@@ -108,6 +111,22 @@ With remote commands:
 }
 
 /**
+ * Manually installs the binary
+ */
+async function installBinary() {
+  console.log("Installing interop-mcp-server binary...");
+
+  try {
+    const { install } = require("../lib/index");
+    await install();
+    console.log("✅ Binary installation completed!");
+  } catch (error) {
+    console.error("❌ Installation failed:", error.message);
+    process.exit(1);
+  }
+}
+
+/**
  * Tests the MCP server
  */
 async function testServer() {
@@ -122,6 +141,7 @@ async function testServer() {
   }
 
   console.log("✅ Binary found");
+  console.log(`   Location: ${binaryPath}`);
   console.log("✅ MCP server is ready to use");
   console.log("\nTo use with Claude Desktop, add the configuration shown with:");
   console.log("  npx interop-mcp-server --config");
@@ -136,8 +156,13 @@ function runMCPServer(args) {
 
   // Check if binary exists
   if (!fs.existsSync(binaryPath)) {
-    console.error("❌ Interop binary not found. Please reinstall the package:");
-    console.error("  npm install interop-mcp-server");
+    console.error("❌ Interop binary not found.");
+    console.error(`   Expected location: ${binaryPath}`);
+    console.error("   This usually means the binary download failed during installation.");
+    console.error("   Try reinstalling the package:");
+    console.error("     npm install interop-mcp-server --force");
+    console.error("   Or run the installation manually:");
+    console.error("     npx interop-mcp-server --install");
     process.exit(1);
   }
 
@@ -243,6 +268,11 @@ function main() {
 
   if (args.includes("--test")) {
     testServer();
+    return;
+  }
+
+  if (args.includes("--install")) {
+    installBinary();
     return;
   }
 

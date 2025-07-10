@@ -1,6 +1,6 @@
 {
     "name": "interop-mcp-server",
-    "version": "1.0.1",
+    "version": "1.1.0",
     "description": "MCP (Model Context Protocol) server for Interop - Run commands and manage projects via AI assistants",
     "main": "lib/index.js",
     "bin": {
@@ -45,9 +45,7 @@
         "arm64"
     ],
     "dependencies": {
-        "node-fetch": "^3.3.2"
-    },
-    "devDependencies": {
+        "node-fetch": "^3.3.2",
         "tar": "^6.2.0",
         "adm-zip": "^0.5.12"
     },

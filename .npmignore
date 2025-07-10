@@ -17,7 +17,7 @@ Makefile
 
 # Build artifacts
 dist/
-bin/interop*
+bin/interop
 !bin/interop-mcp-server.js
 
 # Documentation (except README)
