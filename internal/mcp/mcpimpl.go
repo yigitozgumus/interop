@@ -162,6 +162,20 @@ func NewMCPLibServer() (*MCPLibServer, error) {
 		return nil, fmt.Errorf("failed to load settings: %w", err)
 	}
 
+	// Check if we should load commands from a remote repository
+	remoteURL := os.Getenv("MCP_REMOTE_URL")
+	var remoteCommands map[string]settings.CommandConfig
+	if remoteURL != "" {
+		logging.Message("Loading commands from remote repository: %s", remoteURL)
+		remoteLoader := NewRemoteCommandLoader()
+		remoteCommands, err = remoteLoader.LoadCommandsFromRemote(remoteURL)
+		if err != nil {
+			cleanup()
+			return nil, fmt.Errorf("failed to load commands from remote repository: %w", err)
+		}
+		logging.Message("Successfully loaded %d commands from remote repository", len(remoteCommands))
+	}
+
 	// Create MCP server with logging disabled
 	serverTitle := "Interop MCP Server"
 	if serverName != "" {
@@ -187,13 +201,31 @@ func NewMCPLibServer() (*MCPLibServer, error) {
 		server.WithLogging(),
 	)
 
+	// Merge local and remote commands
+	commandConfig := make(map[string]settings.CommandConfig)
+
+	// First add local commands
+	for name, cmd := range cfg.Commands {
+		commandConfig[name] = cmd
+	}
+
+	// Then add remote commands (they can override local commands)
+	if remoteCommands != nil {
+		for name, cmd := range remoteCommands {
+			if _, exists := commandConfig[name]; exists {
+				logging.Warning("Remote command '%s' overrides local command", name)
+			}
+			commandConfig[name] = cmd
+		}
+	}
+
 	s := &MCPLibServer{
 		mcpServer:        mcpServer,
 		httpServer:       nil,
 		port:             port,
 		configDir:        configDir,
 		logFile:          logFile,
-		commandConfig:    cfg.Commands,
+		commandConfig:    commandConfig,
 		promptConfig:     cfg.Prompts,
 		commandAliases:   make(map[string]string),
 		serverMode:       serverMode,

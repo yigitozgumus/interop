@@ -308,6 +308,7 @@ func main() {
 	var statusAllServers bool
 	var serverName string
 	var serverMode string
+	var remoteURL string
 
 	// MCP start command
 	mcpStartCmd := &cobra.Command{
@@ -327,12 +328,19 @@ Stdio Mode:
   - Supports both default and named servers
   - Does not support --all flag (single server only)
   - No HTTP ports are used
+
+Remote Mode:
+  - Use --remote flag to fetch commands from a remote Git repository
+  - Commands are loaded dynamically without persisting to disk
+  - Works with both SSE and stdio modes
+  - Repository must have config.d and executables directories
   
 Examples:
   interop mcp start                    # Start all servers in SSE mode
   interop mcp start --mode stdio       # Start default server in stdio mode
   interop mcp start myserver --mode stdio # Start named server in stdio mode
-  interop mcp start myserver --mode sse # Start named server in SSE mode`,
+  interop mcp start myserver --mode sse # Start named server in SSE mode
+  interop mcp start --remote https://github.com/user/repo.git # Start with remote commands`,
 		Run: func(cmd *cobra.Command, args []string) {
 			// Check for stdio mode first
 			if serverMode == "stdio" && startAllServers {
@@ -352,6 +360,11 @@ Examples:
 				os.Setenv("MCP_SERVER_MODE", serverMode)
 			}
 
+			// Set remote URL in environment if provided
+			if remoteURL != "" {
+				os.Setenv("MCP_REMOTE_URL", remoteURL)
+			}
+
 			// For SSE mode, default to all servers if no specific server is specified
 			if serverMode != "stdio" && !startAllServers && serverName == "" {
 				startAllServers = true
@@ -366,6 +379,7 @@ Examples:
 	mcpStartCmd.Flags().BoolVarP(&startAllServers, "all", "a", false, "Start all MCP servers (default, not supported in stdio mode)")
 	mcpStartCmd.Flags().StringVarP(&serverName, "server", "s", "", "Specific MCP server to start")
 	mcpStartCmd.Flags().StringVar(&serverMode, "mode", "sse", "Server mode (stdio or sse)")
+	mcpStartCmd.Flags().StringVar(&remoteURL, "remote", "", "Remote repository URL to fetch commands from dynamically")
 	mcpCmd.AddCommand(mcpStartCmd)
 
 	// MCP stop command
