@@ -1,0 +1,36 @@
+# Development files
+.git/
+.gitignore
+.DS_Store
+*.log
+node_modules/
+
+# Go project files
+go.mod
+go.sum
+*.go
+cmd/
+internal/
+Makefile
+.goreleaser.yml
+.github/
+
+# Build artifacts
+dist/
+bin/interop*
+!bin/interop-mcp-server.js
+
+# Documentation (except README)
+*.md
+!README.md
+
+# Test files in the main project
+*_test.go
+test/
+!test/test.js
+
+# Config files
+.vscode/
+.idea/
+*.toml
+LICENSE 

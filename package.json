@@ -1,0 +1,60 @@
+{
+    "name": "interop-mcp-server",
+    "version": "1.0.1",
+    "description": "MCP (Model Context Protocol) server for Interop - Run commands and manage projects via AI assistants",
+    "main": "lib/index.js",
+    "bin": {
+        "interop-mcp-server": "bin/interop-mcp-server.js"
+    },
+    "scripts": {
+        "postinstall": "node scripts/install-binary.js",
+        "test": "node test/test.js",
+        "prepare": "node scripts/prepare.js"
+    },
+    "keywords": [
+        "mcp",
+        "model-context-protocol",
+        "ai",
+        "assistant",
+        "claude",
+        "chatgpt",
+        "command-line",
+        "project-management",
+        "interop"
+    ],
+    "author": "Yigit Ozgumus",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/yigitozgumus/interop.git"
+    },
+    "homepage": "https://github.com/yigitozgumus/interop#readme",
+    "bugs": {
+        "url": "https://github.com/yigitozgumus/interop/issues"
+    },
+    "engines": {
+        "node": ">=14.0.0"
+    },
+    "os": [
+        "darwin",
+        "linux",
+        "win32"
+    ],
+    "cpu": [
+        "x64",
+        "arm64"
+    ],
+    "dependencies": {
+        "node-fetch": "^3.3.2"
+    },
+    "devDependencies": {
+        "tar": "^6.2.0",
+        "adm-zip": "^0.5.12"
+    },
+    "files": [
+        "bin/",
+        "lib/",
+        "scripts/",
+        "README.md"
+    ]
+}
